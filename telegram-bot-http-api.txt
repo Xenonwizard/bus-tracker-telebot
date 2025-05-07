@@ -1,2 +1,0 @@
-telegram bot HTTP API: "8107924423:AAESCmXgmjzaB6VPADALZGDa0gJi19ebPX4"
-telegram bot link: "t.me/busCheckpointBot"
