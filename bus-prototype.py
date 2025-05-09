@@ -3,15 +3,22 @@ import os
 from dotenv import load_dotenv
 from telebot.types import InlineKeyboardMarkup, InlineKeyboardButton
 import re
+import gspread
+from datetime import datetime
 
 # Load environment variables from .env file
 load_dotenv()
 
 # Replace 'YOUR_BOT_TOKEN' with your actual bot token
 BOT_TOKEN = os.getenv('TELE_TOKEN')
+JSON_TOKEN = os.getenv('JSON_PATHNAME')
 
 # Initialize the bot
 bot = telebot.TeleBot(BOT_TOKEN)
+
+# Initialize cnnecting to google sheets
+gc = gspread.service_account(filename=JSON_TOKEN)
+sh = gc.open("AL25 Everbridge Tracking")
 
 # Store user sessions in memory (for a live bot, consider a DB)
 user_sessions = {}
@@ -41,6 +48,7 @@ prompts = {
 def ask_bus_number(message):
     user_sessions[message.chat.id] = {"step_index": 0}
     bot.send_message(message.chat.id, "Please enter the bus number:")
+    #input data handling to sheets here
     bot.register_next_step_handler(message, ask_bus_ic)
 
 @bot.message_handler(commands=['edit'])
@@ -76,7 +84,6 @@ def ask_bus_ic_name(message):
     user_sessions[chat_id]['bus_ic'] = name
     bot.send_message(chat_id, "Please enter the Bus 2IC's name:")
     bot.register_next_step_handler(message, ask_2ic)
-
 
 
 def ask_2ic(message):
@@ -163,6 +170,7 @@ def handle_step_callback(call):
 
     if data == "go_back":
         if session["step_index"] > 0:
+            clear_cell(chat_id)
             session["step_index"] -= 1
         send_step_prompt(chat_id)
 
@@ -170,7 +178,7 @@ def handle_step_callback(call):
         step_key = data[4:]
         expected_step = steps[session["step_index"]]
         if step_key == expected_step:
-            log_to_excel_placeholder(chat_id, step_key)
+            log_to_sheets_placeholder(chat_id, step_key)
             session["step_index"] += 1
             send_step_prompt(chat_id)
 
@@ -199,8 +207,32 @@ def end_bot(message):
     user_sessions.pop(message.chat.id, None)
 
 # Placeholder for Excel logging
-def log_to_excel_placeholder(chat_id, step_key):
-    print(f"[LOG] {chat_id} completed: {step_key}")
+def log_to_sheets_placeholder(chat_id, step_key):
     # In real usage: insert timestamp & tick in appropriate Excel cell
+    step_index = user_sessions[chat_id]["step_index"]
+
+    #need to change the row formula in order to suit multiple people using the bot
+    row = 2
+
+    col_time = 8 + (3*step_index)
+    col_true = 9 + (3*step_index)
+    worksheet = sh.worksheet('D1')
+    current_time = datetime.now().strftime("%H%M")
+    worksheet.update_cell(row, col_time, current_time)
+    worksheet.update_cell(row, col_true, "TRUE")
+    print(f"[LOG] {chat_id} completed: {step_key}")
+
+# this function doesnt appear to work. when go back is pressed, nothing happens 
+def clear_cell(chat_id):
+    step_index = user_sessions[chat_id]["step_index"]
+
+    row = 2
+    col_time = 8 + (3*step_index)
+    col_true = 9 + (3*step_index)
+    worksheet = sh.worksheet('D1')
+    worksheet.update_cell(row, col_time,'')
+    worksheet.update_cell(row, col_true,'')
+    print(f"[LOG] {chat_id} retracted, trying again")
+
 
 bot.infinity_polling()  
