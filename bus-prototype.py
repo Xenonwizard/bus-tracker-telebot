@@ -213,9 +213,13 @@ def handle_step_callback(call):
             if step_key == "left_my_custom":
                 bot.send_message(
                     chat_id,
-                    "🔔 *Reminder for Bus IC:* Please put back the event signages at the *front*, *left side* and *rear* of the bus.",
+                    "🔔 *Reminder for Bus IC:*\nPlease put back the event signages at the:\n"
+                    "- 🪧 *Front*\n"
+                    "- 🔲 *Left side*\n"
+                    "- 🪧 *Rear* of the bus.",
                     parse_mode="Markdown"
                 )
+
 
             msg = bot.send_message(
                 chat_id,
