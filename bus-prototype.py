@@ -55,15 +55,30 @@ def ask_bus_ic(message):
     chat_id = message.chat.id
     bus_number = message.text.strip()
 
-    # Validate the bus number (alphanumeric, 2–20 chars)
     if not re.fullmatch(r"[A-Za-z0-9\- ]{2,20}", bus_number):
         bot.send_message(chat_id, "❌ Please enter a valid bus number (alphanumeric, 2–20 characters).")
         return bot.register_next_step_handler(message, ask_bus_ic)
 
     user_sessions[chat_id]['bus_number'] = bus_number
 
+    # NEW: Ask for bus plate
+    bot.send_message(chat_id, "Please enter the *bus plate number*:", parse_mode="Markdown")
+
+    bot.register_next_step_handler(message, ask_bus_plate_number)
+
+def ask_bus_plate_number(message):
+    chat_id = message.chat.id
+    plate = message.text.strip().upper()
+
+    # Basic validation: alphanumeric + hyphens
+    if not re.fullmatch(r"[A-Z0-9\- ]{3,15}", plate):
+        bot.send_message(chat_id, "❌ Please enter a valid bus plate number (e.g. 'ABC1234' or 'SGX-1234').")
+        return bot.register_next_step_handler(message, ask_bus_plate_number)
+
+    user_sessions[chat_id]['bus_plate'] = plate
     bot.send_message(chat_id, "Please enter the Bus IC's name:")
     bot.register_next_step_handler(message, ask_bus_ic_name)
+
 
 def ask_bus_ic_name(message):
     chat_id = message.chat.id
@@ -115,6 +130,7 @@ def confirm_user_details(message):
     summary = (
         f"🚌 *Your entered details:*\n\n"
         f"*Bus Number:* {session['bus_number']}\n"
+         f"*Bus Plate:* {session.get('bus_plate', 'N/A')}\n" 
         f"*Bus IC:* {session['bus_ic']}\n"
         f"*Bus 2IC:* {session['bus_2ic']}\n"
         f"*Passenger Count:* {session['passenger_count']}\n\n"
@@ -161,6 +177,8 @@ def handle_step_callback(call):
 
     data = call.data
 
+    
+
     if data == "go_back":
         if session["step_index"] > 0:
             session["step_index"] -= 1
@@ -189,9 +207,15 @@ def handle_step_callback(call):
 
         if step_key == expected_step:
             log_to_excel_placeholder(chat_id, step_key)
-
             session['awaiting_passenger_count_step'] = step_key
-            print(f"[STATE] Waiting for passenger count at: {step_key}")
+
+            # 🎯 Custom reminder after MY Customs
+            if step_key == "left_my_custom":
+                bot.send_message(
+                    chat_id,
+                    "🔔 *Reminder for Bus IC:* Please put back the event signages at the *front*, *left side* and *rear* of the bus.",
+                    parse_mode="Markdown"
+                )
 
             msg = bot.send_message(
                 chat_id,
