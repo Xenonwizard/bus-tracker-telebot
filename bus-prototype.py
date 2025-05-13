@@ -43,20 +43,50 @@ prompts = {
     "reached_runway": "Have you reached Sunway? 🎉🚌"
 }
 
+
 # Entry point
 @bot.message_handler(commands=['start'])
-def ask_bus_number(message):
+def ask_wave_number(message):
     user_sessions[message.chat.id] = {"step_index": 0}
+    bot.send_message(message.chat.id, "Please enter the *Wave number* (single digit):", parse_mode="Markdown")
+    bot.register_next_step_handler(message, handle_wave_number)
+
+
+def ask_bus_number(message):
+    # user_sessions[message.chat.id] = {"step_index": 0}
     bot.send_message(message.chat.id, "Please enter the bus number:")
     #input data handling to sheets here
     bot.register_next_step_handler(message, ask_bus_ic)
 
-@bot.message_handler(commands=['edit'])
+def handle_wave_number(message):
+    chat_id = message.chat.id
+    wave = message.text.strip()
+
+    if not wave.isdigit() or not (1 <= int(wave) <= 9):
+        bot.send_message(chat_id, "❌ Please enter a valid Wave number (1–9).")
+        return bot.register_next_step_handler(message, handle_wave_number)
+
+    user_sessions[chat_id]['wave'] = wave
+    bot.send_message(chat_id, "Please enter the *CGs' names* (comma-separated if more than one):", parse_mode="Markdown")
+    bot.register_next_step_handler(message, handle_cgs_input)
+
+def handle_cgs_input(message):
+    chat_id = message.chat.id
+    cgs = message.text.strip()
+
+    if not cgs:
+        bot.send_message(chat_id, "❌ Please enter valid CGs' names.")
+        return bot.register_next_step_handler(message, handle_cgs_input)
+
+    user_sessions[chat_id]['cgs'] = cgs
+    ask_bus_number(message)  # Now continue with your existing flow
+
+# @bot.message_handler(commands=['edit'])
 def edit_details(message):
     chat_id = message.chat.id
     user_sessions[chat_id] = {"step_index": 0}  # Reset session
-    bot.send_message(chat_id, "You’ve chosen to edit details. Let’s restart from bus number.")
-    ask_bus_number(message)
+    bot.send_message(chat_id, "You’ve chosen to edit details. Let’s restart from wave number.")
+    ask_wave_number(message)
 
 
 def ask_bus_ic(message):
@@ -141,15 +171,18 @@ def confirm_user_details(message):
 
     session = user_sessions[chat_id]
     summary = (
-        f"🚌 *Your entered details:*\n\n"
-        f"*Bus Number:* {session['bus_number']}\n"
-         f"*Bus Plate:* {session.get('bus_plate', 'N/A')}\n" 
-        f"*Bus IC:* {session['bus_ic']}\n"
-        f"*Bus 2IC:* {session['bus_2ic']}\n"
-        f"*Passenger Count:* {session['passenger_count']}\n\n"
-        f"✅ If everything is correct, click *Continue*.\n"
-        f"🔁 If you'd like to change anything, click *Edit*."
+    f"🚌 *Your entered details:*\n\n"
+    f"*Wave:* {session['wave']}\n"
+    f"*CGs:* {session['cgs']}\n"
+    f"*Bus Number:* {session['bus_number']}\n"
+    f"*Bus Plate:* {session['bus_plate']}\n"
+    f"*Bus IC:* {session['bus_ic']}\n"
+    f"*Bus 2IC:* {session['bus_2ic']}\n"
+    f"*Passenger Count:* {session['passenger_count']}\n\n"
+    f"✅ If everything is correct, click *Continue*.\n"
+    f"🔁 If you'd like to change anything, click *Edit*."
     )
+
 
     markup = InlineKeyboardMarkup()
     markup.add(
@@ -160,7 +193,7 @@ def confirm_user_details(message):
     bot.send_message(chat_id, summary, reply_markup=markup, parse_mode="Markdown")
 
 def start_checkpoint_flow(message):
-    user_sessions[message.chat.id]['passenger_count'] = message.text
+    # user_sessions[message.chat.id]['passenger_count'] = message.text
     send_step_prompt(message.chat.id)
 
 def send_step_prompt(chat_id):
@@ -235,11 +268,7 @@ def handle_step_callback(call):
                 )
 
 
-            msg = bot.send_message(
-                chat_id,
-                f"👥 Please enter the *current passenger count* after '{prompts[step_key]}':",
-                parse_mode="Markdown"
-            )
+            prompt_passenger_count(chat_id, step_key)
             bot.register_next_step_handler(msg, handle_passenger_count_after_step)
         else:
             print("[WARNING] Mismatch: button step vs current expected step")
@@ -261,7 +290,16 @@ def handle_step_callback(call):
     elif call.data == "edit_details":
         # bot.send_message(call.message.chat.id, "Let’s start over. Please enter the bus number:")
         user_sessions[call.message.chat.id] = {"step_index": 0}
-        ask_bus_number(call.message)
+        ask_wave_number(call.message)
+
+def prompt_passenger_count(chat_id, step_key):
+    user_sessions[chat_id]['awaiting_passenger_count_step'] = step_key
+    msg = bot.send_message(
+        chat_id,
+        f"👥 Please enter the *current passenger count* after '{prompts[step_key]}':",
+        parse_mode="Markdown"
+    )
+    bot.register_next_step_handler(msg, handle_passenger_count_after_step)
 
     
 
@@ -281,8 +319,25 @@ def handle_passenger_count_after_step(message):
         bot.send_message(chat_id, "⚠️ No step context found. Please try again.")
         return
 
+    #handle if the passenger count does not match the original number
+    current_pax = int(passenger_count)
+    expected_pax = int(user_sessions[chat_id].get('passenger_count', current_pax))
+    
     if 'passenger_log' not in user_sessions[chat_id]:
         user_sessions[chat_id]['passenger_log'] = []
+
+    if current_pax != expected_pax:
+        user_sessions[chat_id]['pending_pax_mismatch'] = {
+            'step_key': step_key,
+            'actual_count': current_pax,
+            'expected_count': expected_pax
+        }
+        msg = bot.send_message(
+            chat_id,
+            f"⚠️ Passenger count mismatch (Expected: {expected_pax}, Now: {current_pax}).\n"
+            f"Please enter a reason to include in the Remarks column:"
+        )
+        return bot.register_next_step_handler(msg, handle_mismatch_reason)
 
     user_sessions[chat_id]['passenger_log'].append({
         'step': step_key,
@@ -298,6 +353,37 @@ def handle_passenger_count_after_step(message):
     bot.send_message(chat_id, "✅ Passenger count recorded.")
     user_sessions[chat_id]['step_index'] += 1
     send_step_prompt(chat_id)
+
+def handle_mismatch_reason(message):
+    chat_id = message.chat.id
+    reason = message.text.strip()
+    mismatch = user_sessions[chat_id].pop('pending_pax_mismatch', None)
+
+    if not mismatch:
+        bot.send_message(chat_id, "⚠️ No mismatch context found. Please retry the step.")
+        return
+
+    # Save mismatch count into passenger log
+    if 'passenger_log' not in user_sessions[chat_id]:
+        user_sessions[chat_id]['passenger_log'] = []
+
+    user_sessions[chat_id]['passenger_log'].append({
+        'step': mismatch['step_key'],
+        'count': mismatch['actual_count']
+    })
+
+    log_checkpoint_to_sheet(
+        chat_id,
+        mismatch['step_key'],
+        actual_pax=mismatch['actual_count'],
+        expected_pax=mismatch['expected_count'],
+        remark=reason
+    )
+
+    bot.send_message(chat_id, "✅ Passenger count and remark recorded.")
+    user_sessions[chat_id]['step_index'] += 1
+    send_step_prompt(chat_id)
+
 
 
 #validation helper function.
@@ -351,6 +437,8 @@ def log_initial_details_to_sheet(chat_id):
     columns = get_column_mapping(worksheet)
 
     try:
+        worksheet.update_cell(row, columns['wave'], session['wave'])
+        worksheet.update_cell(row, columns['cgs'], session['cgs'])
         worksheet.update_cell(row, columns['bus #'], session['bus_number'])
         worksheet.update_cell(row, columns['bus plate'], session['bus_plate'])
         worksheet.update_cell(row, columns['no. of pax'], session['passenger_count'])
@@ -368,7 +456,7 @@ def log_initial_details_to_sheet(chat_id):
     print(f"[LOG] Initial bus info saved dynamically for user {chat_id} at row {row}")
 
 # this is code to log each checkpoint.
-def log_checkpoint_to_sheet(chat_id, step_key):
+def log_checkpoint_to_sheet(chat_id, step_key, actual_pax=None, expected_pax=None, remark=None):
     session = user_sessions[chat_id]
     row = session['row']
     worksheet = sh.worksheet('D1')
@@ -396,6 +484,16 @@ def log_checkpoint_to_sheet(chat_id, step_key):
     try:
         time_col_index = columns[time_col_name]
         tele_col_index = time_col_index + 1  # "Tele" column is always next
+        remarks_col_index = tele_col_index + 1
+
+        if remark:
+            worksheet.update_cell(row, remarks_col_index, remark)
+            worksheet.format(gspread.utils.rowcol_to_a1(row, remarks_col_index), {
+                "backgroundColor": {"red": 1, "green": 0.8, "blue": 0.8}
+            })
+        else:
+            worksheet.update_cell(row, remarks_col_index, "")
+
     except KeyError as e:
         print(f"[ERROR] Column header not found: {e}")
         return
