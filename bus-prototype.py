@@ -131,7 +131,13 @@ def ask_passenger_count(message):
 
 def confirm_user_details(message):
     chat_id = message.chat.id
-    user_sessions[chat_id]['passenger_count'] = message.text
+    session = user_sessions[chat_id]  #
+    # user_sessions[chat_id]['passenger_count'] = message.text
+    session['passenger_count'] = message.text.strip()
+
+    # Assign row dynamically
+    row = get_or_create_user_row(session['bus_number'])
+    session['row'] = row  # Store for future logging
 
     session = user_sessions[chat_id]
     summary = (
@@ -214,7 +220,7 @@ def handle_step_callback(call):
         print(f"[DEBUG] step_key: {step_key}, expected_step: {expected_step}, step_index: {session['step_index']}")
 
         if step_key == expected_step:
-            log_to_excel_placeholder(chat_id, step_key)
+            # log_to_excel_placeholder(chat_id, step_key)
             session['awaiting_passenger_count_step'] = step_key
 
             # 🎯 Custom reminder after MY Customs
@@ -241,6 +247,10 @@ def handle_step_callback(call):
             
     elif call.data == "confirm_details":
         chat_id = call.message.chat.id
+
+        # 🔧 Log to the sheet now
+        log_initial_details_to_sheet(chat_id)
+
         markup = InlineKeyboardMarkup()
         markup.add(InlineKeyboardButton("🟢 Okay", callback_data="begin_checklist"))
         bot.send_message(chat_id, "Great! Please click the button below to begin the journey checklist.", reply_markup=markup)
@@ -252,9 +262,6 @@ def handle_step_callback(call):
         # bot.send_message(call.message.chat.id, "Let’s start over. Please enter the bus number:")
         user_sessions[call.message.chat.id] = {"step_index": 0}
         ask_bus_number(call.message)
-
-    
-
 
     
 
@@ -285,12 +292,15 @@ def handle_passenger_count_after_step(message):
     print(f"[LOG] ✅ Saved count: {passenger_count} for step: {step_key} (User: {chat_id})")
     print(f"[STATE] Full log for user {chat_id}: {user_sessions[chat_id]['passenger_log']}")
 
+    # ✅ NEW: Log time + checkbox to Google Sheet
+    log_checkpoint_to_sheet(chat_id, step_key)
+
     bot.send_message(chat_id, "✅ Passenger count recorded.")
     user_sessions[chat_id]['step_index'] += 1
     send_step_prompt(chat_id)
 
 
-
+#validation helper function.
 def is_valid_name(text):
     return re.fullmatch(r"[A-Za-z\s\-]+", text.strip()) is not None
 
@@ -300,33 +310,128 @@ def end_bot(message):
     bot.send_message(message.chat.id, "Session ended. Goodbye!")
     user_sessions.pop(message.chat.id, None)
 
-# Placeholder for Excel logging
-def log_to_sheets_placeholder(chat_id, step_key):
-    # In real usage: insert timestamp & tick in appropriate Excel cell
-    step_index = user_sessions[chat_id]["step_index"]
 
-    #need to change the row formula in order to suit multiple people using the bot
-    row = 2
-
-    col_time = 8 + (3*step_index)
-    col_true = 9 + (3*step_index)
+# it will check by bus number and see if the user has an existing code
+def get_or_create_user_row(bus_number):
     worksheet = sh.worksheet('D1')
-    current_time = datetime.now().strftime("%H%M")
-    worksheet.update_cell(row, col_time, current_time)
-    worksheet.update_cell(row, col_true, "TRUE")
-    print(f"[LOG] {chat_id} completed: {step_key}")
+    bus_numbers = worksheet.col_values(1)  # Assuming column A has bus numbers
 
-# this function doesnt appear to work. when go back is pressed, nothing happens 
+    for i, existing in enumerate(bus_numbers):
+        if existing.strip().lower() == bus_number.strip().lower():
+            return i + 1  # gspread uses 1-based indexing
+
+    # If not found, append a new row
+    new_row_index = len(bus_numbers) + 1
+    worksheet.update_cell(new_row_index, 1, bus_number)
+    return new_row_index
+
+
 def clear_cell(chat_id):
-    step_index = user_sessions[chat_id]["step_index"]
+    session = user_sessions[chat_id]
+    step_index = session["step_index"]
+    row = session.get("row", 2)
 
-    row = 2
-    col_time = 8 + (3*step_index)
-    col_true = 9 + (3*step_index)
+    col_time = 8 + (3 * step_index)
+    col_true = 9 + (3 * step_index)
     worksheet = sh.worksheet('D1')
-    worksheet.update_cell(row, col_time,'')
-    worksheet.update_cell(row, col_true,'')
-    print(f"[LOG] {chat_id} retracted, trying again")
+    worksheet.update_cell(row, col_time, '')
+    worksheet.update_cell(row, col_true, '')
+    print(f"[LOG] {chat_id} cleared step at row {row}")
+
+# read the column head
+def get_column_mapping(worksheet):
+    header_row = worksheet.row_values(1)
+    return {header.strip().lower(): idx + 1 for idx, header in enumerate(header_row)}
+
+# this logs the bus number, bus plate, no. of pax, bus ic and bus 2ic down into the sheet.
+def log_initial_details_to_sheet(chat_id):
+    session = user_sessions[chat_id]
+    row = session['row']
+    worksheet = sh.worksheet('D1')
+    columns = get_column_mapping(worksheet)
+
+    try:
+        worksheet.update_cell(row, columns['bus #'], session['bus_number'])
+        worksheet.update_cell(row, columns['bus plate'], session['bus_plate'])
+        worksheet.update_cell(row, columns['no. of pax'], session['passenger_count'])
+        worksheet.update_cell(row, columns['bus ic'], session['bus_ic'])
+        worksheet.update_cell(row, columns['bus 2ic'], session['bus_2ic'])
+    except KeyError as e:
+        bot.send_message(chat_id, f"❌ Column header not found in sheet: {e}")
+        print(f"[ERROR] Column not found: {e}")
+        return
+    except Exception as e:
+        bot.send_message(chat_id, f"❌ Failed to update Google Sheet: {e}")
+        print(f"[ERROR] Google Sheet update failed: {e}")
+        return
+
+    print(f"[LOG] Initial bus info saved dynamically for user {chat_id} at row {row}")
+
+# this is code to log each checkpoint.
+def log_checkpoint_to_sheet(chat_id, step_key):
+    session = user_sessions[chat_id]
+    row = session['row']
+    worksheet = sh.worksheet('D1')
+    columns = get_column_mapping(worksheet)
+
+    # Map step to the actual time column name in the sheet
+    step_to_column = {
+        "left_star": "Time departed from Star/PTC",
+        "reached_sg_custom": "Time reach SG custom",
+        "left_sg_custom": "Time leave SG custom",
+        "reached_my_custom": "Time reach MY custom",
+        "left_my_custom": "Time leave MY custom",
+        "reached_rest_stop": "Time Reach yong peng",
+        "left_rest_stop": "Time Leave yong peng",
+        "at_30_min_mark": "Time reach 30 min mark",
+        "reached_runway": "Time bus reach sunway"
+    }
+
+
+    if step_key not in step_to_column:
+        print(f"[INFO] No sheet mapping for step '{step_key}', skipping log.")
+        return
+
+    time_col_name = step_to_column[step_key].strip().lower()
+    try:
+        time_col_index = columns[time_col_name]
+        tele_col_index = time_col_index + 1  # "Tele" column is always next
+    except KeyError as e:
+        print(f"[ERROR] Column header not found: {e}")
+        return
+
+    current_time = datetime.now().strftime("%H:%M")
+    worksheet.update_cell(row, time_col_index, current_time)
+    worksheet.update_cell(row, tele_col_index, True)
+
+    print(f"[LOG] Logged step '{step_key}' at {current_time} for user {chat_id} in row {row}")
+
+# test code
+import random
+@bot.message_handler(commands=['simulate'])
+def simulate_test_user(message):
+    fake_chat_id = random.randint(1000000, 9999999)  # Unique each time
+
+    bus_number = f"TestBus{fake_chat_id % 1000}"
+    user_sessions[fake_chat_id] = {
+        "step_index": 0,
+        "bus_number": bus_number,
+        "bus_plate": f"TEST-{fake_chat_id % 9999}",
+        "bus_ic": "SimIC",
+        "bus_2ic": "Sim2IC",
+        "passenger_count": str(random.randint(30, 50))
+    }
+
+    row = get_or_create_user_row(bus_number)
+    user_sessions[fake_chat_id]['row'] = row
+    log_initial_details_to_sheet(fake_chat_id)
+
+    bot.send_message(
+        message.chat.id,
+        f"✅ Simulated session created.\n"
+        f"User ID: {fake_chat_id}\n"
+        f"Row {row} assigned for {bus_number}."
+    )
 
 
 bot.infinity_polling()  
