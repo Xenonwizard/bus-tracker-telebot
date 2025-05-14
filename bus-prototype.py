@@ -56,11 +56,17 @@ step_to_column = {
     "reached_runway": "Time bus reach sunway"
 }
 
+def intercept_end_command(message, next_handler):
+    if message.text.strip().lower() == '/end':
+        return end_bot(message)
+    else:
+        return next_handler(message)
+
 # Entry point
 @bot.message_handler(commands=['start'])
 def handle_start(message):
     bot.send_message(message.chat.id, "🚌 Welcome! Please enter the *bus number* to begin or resume tracking:", parse_mode="Markdown")
-    bot.register_next_step_handler(message, ask_and_validate_bus_number)
+    bot.register_next_step_handler(message, lambda msg: intercept_end_command(msg,ask_and_validate_bus_number))
 
 def handle_bus_recovery_check(message):
     chat_id = message.chat.id
@@ -75,12 +81,12 @@ def handle_bus_recovery_check(message):
     else:
         user_sessions[chat_id] = {"step_index": 0, "bus_number": bus_number}
         bot.send_message(chat_id, "🆕 New bus detected. Please enter the *Wave number* (1–9):", parse_mode="Markdown")
-        bot.register_next_step_handler(message, handle_wave_number)
+        bot.register_next_step_handler(message, lambda msg: intercept_end_command(msg,handle_wave_number))
 
 def ask_wave_number(message):
     user_sessions[message.chat.id] = {"step_index": 0}
     bot.send_message(message.chat.id, "Please enter the *Wave number* (single digit):", parse_mode="Markdown")
-    bot.register_next_step_handler(message, handle_wave_number)
+    bot.register_next_step_handler(message, lambda msg: intercept_end_command(msg,handle_wave_number))
 
 
 
@@ -88,7 +94,7 @@ def ask_bus_number(message):
     # user_sessions[message.chat.id] = {"step_index": 0}
     bot.send_message(message.chat.id, "Please enter the bus number:")
     #input data handling to sheets here
-    bot.register_next_step_handler(message, ask_and_validate_bus_plate)
+    bot.register_next_step_handler(message, lambda msg: intercept_end_command(msg, ask_and_validate_bus_plate))
 
 def handle_wave_number(message):
     chat_id = message.chat.id
@@ -96,11 +102,11 @@ def handle_wave_number(message):
 
     if not wave.isdigit() or not (1 <= int(wave) <= 9):
         bot.send_message(chat_id, "❌ Please enter a valid Wave number (1–9).")
-        return bot.register_next_step_handler(message, handle_wave_number)
+        return bot.register_next_step_handler(message,lambda msg: intercept_end_command(msg, handle_wave_number))
 
     user_sessions[chat_id]['wave'] = wave
     bot.send_message(chat_id, "Please enter the *CGs' names* (comma-separated if more than one):", parse_mode="Markdown")
-    bot.register_next_step_handler(message, handle_cgs_input)
+    bot.register_next_step_handler(message,lambda msg: intercept_end_command(msg, handle_cgs_input))
 
 
 
@@ -110,18 +116,24 @@ def handle_cgs_input(message):
 
     if not cgs:
         bot.send_message(chat_id, "❌ Please enter valid CGs' names.")
-        return bot.register_next_step_handler(message, handle_cgs_input)
+        return bot.register_next_step_handler(message, lambda msg: intercept_end_command(msg,handle_cgs_input))
 
     user_sessions[chat_id]['cgs'] = cgs
     bot.send_message(chat_id, "Please enter the *bus plate number*:", parse_mode="Markdown")
-    bot.register_next_step_handler(message, ask_and_validate_bus_plate)
+    bot.register_next_step_handler(message, lambda msg: intercept_end_command(msg, ask_and_validate_bus_plate))
 
 # @bot.message_handler(commands=['edit'])
 def edit_details(message):
     chat_id = message.chat.id
-    user_sessions[chat_id] = {"step_index": 0}  # Reset session
-    bot.send_message(chat_id, "You’ve chosen to edit details. Let’s restart from wave number.")
-    ask_wave_number(message)
+    # user_sessions[chat_id] = {"step_index": 0}  # Reset session
+
+    msg = bot.send_message(
+        chat_id,
+        "🔁 You’ve chosen to edit details.\nPlease re-enter the *bus number:*",
+        parse_mode="Markdown"
+    )
+    bot.register_next_step_handler(msg, lambda msg1: intercept_end_command(msg1,ask_and_validate_bus_number))
+
 
 
 # def ask_bus_ic(message):
@@ -145,7 +157,7 @@ def ask_and_validate_bus_number(message):
 
     if not re.fullmatch(r"[A-Za-z0-9\- ]{2,20}", bus_number):
         bot.send_message(chat_id, "❌ Please enter a valid bus number (alphanumeric, 2–20 characters).")
-        return bot.register_next_step_handler(message, ask_and_validate_bus_number)
+        return bot.register_next_step_handler(message, lambda msg: intercept_end_command(msg, ask_and_validate_bus_number))
 
     if chat_id not in user_sessions:
         user_sessions[chat_id] = {}
@@ -170,11 +182,11 @@ def ask_and_validate_bus_plate(message):
 
     if not re.fullmatch(r"[A-Z0-9\- ]{3,15}", plate):
         bot.send_message(chat_id, "❌ Please enter a valid bus plate number (e.g. 'ABC1234' or 'SGX-1234').")
-        return bot.register_next_step_handler(message, ask_and_validate_bus_plate)
+        return bot.register_next_step_handler(message, lambda msg: intercept_end_command(msg,ask_and_validate_bus_plate))
 
     user_sessions[chat_id]['bus_plate'] = plate
     bot.send_message(chat_id, "Please enter the Bus IC's name:")
-    bot.register_next_step_handler(message, ask_bus_ic_name)
+    bot.register_next_step_handler(message, lambda msg: intercept_end_command(msg,ask_bus_ic_name))
 
 
 def ask_bus_plate_number(message):
@@ -184,11 +196,11 @@ def ask_bus_plate_number(message):
     # Basic validation: alphanumeric + hyphens
     if not re.fullmatch(r"[A-Z0-9\- ]{3,15}", plate):
         bot.send_message(chat_id, "❌ Please enter a valid bus plate number (e.g. 'ABC1234' or 'SGX-1234').")
-        return bot.register_next_step_handler(message, ask_bus_plate_number)
+        return bot.register_next_step_handler(message, lambda msg: intercept_end_command(msg,ask_bus_plate_number))
 
     user_sessions[chat_id]['bus_plate'] = plate
     bot.send_message(chat_id, "Please enter the Bus IC's name:")
-    bot.register_next_step_handler(message, ask_bus_ic_name)
+    bot.register_next_step_handler(message, lambda msg: intercept_end_command(msg,ask_bus_ic_name))
 
 
 def ask_bus_ic_name(message):
@@ -197,22 +209,22 @@ def ask_bus_ic_name(message):
 
     if not is_valid_name(name):
         bot.send_message(chat_id, "❌ Please enter a valid name for the Bus IC (letters only).")
-        return bot.register_next_step_handler(message, ask_bus_ic_name)
+        return bot.register_next_step_handler(message, lambda msg: intercept_end_command(msg, ask_bus_ic_name))
 
     user_sessions[chat_id]['bus_ic'] = name
     bot.send_message(chat_id, "Please enter the Bus 2IC's name:")
-    bot.register_next_step_handler(message, ask_2ic)
+    bot.register_next_step_handler(message, lambda msg: intercept_end_command(msg, ask_2ic))
 
 
 def ask_2ic(message):
     chat_id = message.chat.id
     if not is_valid_name(message.text):
         bot.send_message(chat_id, "❌ Please enter a valid name for the Bus 2IC (letters only).")
-        return bot.register_next_step_handler(message, ask_2ic)
+        return bot.register_next_step_handler(message, lambda msg: intercept_end_command(msg,ask_2ic))
 
     user_sessions[chat_id]['bus_2ic'] = message.text
     bot.send_message(chat_id, "Please enter the total number of people on board:")
-    bot.register_next_step_handler(message, ask_passenger_count)
+    bot.register_next_step_handler(message, lambda msg: intercept_end_command(msg,ask_passenger_count))
 
 
 def ask_passenger_count(message):
@@ -225,7 +237,7 @@ def ask_passenger_count(message):
     # Then validate
     if not passenger_count.isdigit():
         bot.send_message(chat_id, "❌ Please enter a valid number for passenger count.")
-        return bot.register_next_step_handler(message, ask_passenger_count)
+        return bot.register_next_step_handler(message, lambda msg: intercept_end_command(msg,ask_passenger_count))
 
     # If valid, proceed
     confirm_user_details(message)
@@ -245,9 +257,9 @@ def confirm_user_details(message):
     session = user_sessions[chat_id]
     summary = (
     f"🚌 *Your entered details:*\n\n"
+    f"*Bus Number:* {session['bus_number']}\n"
     f"*Wave:* {session['wave']}\n"
     f"*CGs:* {session['cgs']}\n"
-    f"*Bus Number:* {session['bus_number']}\n"
     f"*Bus Plate:* {session['bus_plate']}\n"
     f"*Bus IC:* {session['bus_ic']}\n"
     f"*Bus 2IC:* {session['bus_2ic']}\n"
@@ -363,7 +375,7 @@ def handle_step_callback(call):
     elif call.data == "edit_details":
         # bot.send_message(call.message.chat.id, "Let’s start over. Please enter the bus number:")
         user_sessions[call.message.chat.id] = {"step_index": 0}
-        ask_wave_number(call.message)
+        edit_details(call.message) 
 
 def prompt_passenger_count(chat_id, step_key):
     user_sessions[chat_id]['awaiting_passenger_count_step'] = step_key
@@ -372,7 +384,7 @@ def prompt_passenger_count(chat_id, step_key):
         f"👥 Please enter the *current passenger count* after '{prompts[step_key]}':",
         parse_mode="Markdown"
     )
-    bot.register_next_step_handler(msg, handle_passenger_count_after_step)
+    bot.register_next_step_handler(msg, lambda msg1: intercept_end_command(msg1,handle_passenger_count_after_step))
 
     
 
@@ -384,7 +396,7 @@ def handle_passenger_count_after_step(message):
     if not passenger_count.isdigit():
         print("[ERROR] ❌ Invalid passenger count input")
         bot.send_message(chat_id, "❌ Please enter a valid number for passenger count.")
-        return bot.register_next_step_handler(message, handle_passenger_count_after_step)
+        return bot.register_next_step_handler(message, lambda msg: intercept_end_command(msg,handle_passenger_count_after_step))
 
     step_key = user_sessions[chat_id].get('awaiting_passenger_count_step')
     if not step_key:
@@ -412,7 +424,7 @@ def handle_passenger_count_after_step(message):
             f"⚠️ Passenger count mismatch (Expected: {expected_pax}, Now: {current_pax}).\n"
             f"Please enter a reason to include in the Remarks column:"
         )
-        return bot.register_next_step_handler(msg, handle_mismatch_reason)
+        return bot.register_next_step_handler(msg, lambda msg1: intercept_end_command(msg1,handle_mismatch_reason))
 
     user_sessions[chat_id]['passenger_log'].append({
         'step': step_key,
@@ -469,9 +481,13 @@ def is_valid_name(text):
     return re.fullmatch(r"[A-Za-z\s\-]+", text.strip()) is not None
 
 
+
+    
 @bot.message_handler(commands=['end'])
 def end_bot(message):
-    bot.send_message(message.chat.id, "Session ended. Goodbye!")
+    chat_id = message.chat.id
+    # user_sessions.pop(chat_id, None)
+    bot.send_message(chat_id, "✅ Your session has been terminated. You can restart anytime with /start.")
     user_sessions.pop(message.chat.id, None)
 
 
