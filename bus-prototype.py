@@ -43,20 +43,52 @@ prompts = {
     "reached_runway": "Have you reached Sunway? 🎉🚌"
 }
 
+# Doing this so that we can recover lost sessions by making it globally available
+step_to_column = {
+    "left_star": "Time departed from Star/PTC",
+    "reached_sg_custom": "Time reach SG custom",
+    "left_sg_custom": "Time leave SG custom",
+    "reached_my_custom": "Time reach MY custom",
+    "left_my_custom": "Time leave MY custom",
+    "reached_rest_stop": "Time Reach yong peng",
+    "left_rest_stop": "Time Leave yong peng",
+    "at_30_min_mark": "Time reach 30 min mark",
+    "reached_runway": "Time bus reach sunway"
+}
 
 # Entry point
 @bot.message_handler(commands=['start'])
+def handle_start(message):
+    bot.send_message(message.chat.id, "🚌 Welcome! Please enter the *bus number* to begin or resume tracking:", parse_mode="Markdown")
+    bot.register_next_step_handler(message, ask_and_validate_bus_number)
+
+def handle_bus_recovery_check(message):
+    chat_id = message.chat.id
+    bus_number = message.text.strip()
+
+    session = recover_session_from_sheet(chat_id, bus_number)
+
+    if session:
+        user_sessions[chat_id] = session
+        bot.send_message(chat_id, f"🔄 Resuming tracking for *Bus {bus_number}* from checkpoint {session['step_index'] + 1}.", parse_mode="Markdown")
+        send_step_prompt(chat_id)
+    else:
+        user_sessions[chat_id] = {"step_index": 0, "bus_number": bus_number}
+        bot.send_message(chat_id, "🆕 New bus detected. Please enter the *Wave number* (1–9):", parse_mode="Markdown")
+        bot.register_next_step_handler(message, handle_wave_number)
+
 def ask_wave_number(message):
     user_sessions[message.chat.id] = {"step_index": 0}
     bot.send_message(message.chat.id, "Please enter the *Wave number* (single digit):", parse_mode="Markdown")
     bot.register_next_step_handler(message, handle_wave_number)
 
 
+
 def ask_bus_number(message):
     # user_sessions[message.chat.id] = {"step_index": 0}
     bot.send_message(message.chat.id, "Please enter the bus number:")
     #input data handling to sheets here
-    bot.register_next_step_handler(message, ask_bus_ic)
+    bot.register_next_step_handler(message, ask_and_validate_bus_plate)
 
 def handle_wave_number(message):
     chat_id = message.chat.id
@@ -70,6 +102,8 @@ def handle_wave_number(message):
     bot.send_message(chat_id, "Please enter the *CGs' names* (comma-separated if more than one):", parse_mode="Markdown")
     bot.register_next_step_handler(message, handle_cgs_input)
 
+
+
 def handle_cgs_input(message):
     chat_id = message.chat.id
     cgs = message.text.strip()
@@ -79,7 +113,8 @@ def handle_cgs_input(message):
         return bot.register_next_step_handler(message, handle_cgs_input)
 
     user_sessions[chat_id]['cgs'] = cgs
-    ask_bus_number(message)  # Now continue with your existing flow
+    bot.send_message(chat_id, "Please enter the *bus plate number*:", parse_mode="Markdown")
+    bot.register_next_step_handler(message, ask_and_validate_bus_plate)
 
 # @bot.message_handler(commands=['edit'])
 def edit_details(message):
@@ -89,20 +124,58 @@ def edit_details(message):
     ask_wave_number(message)
 
 
-def ask_bus_ic(message):
+# def ask_bus_ic(message):
+#     chat_id = message.chat.id
+#     bus_number = message.text.strip()
+
+#     if not re.fullmatch(r"[A-Za-z0-9\- ]{2,20}", bus_number):
+#         bot.send_message(chat_id, "❌ Please enter a valid bus number (alphanumeric, 2–20 characters).")
+#         return bot.register_next_step_handler(message, ask_bus_ic)
+
+#     user_sessions[chat_id]['bus_number'] = bus_number
+
+#     # NEW: Ask for bus plate
+#     bot.send_message(chat_id, "Please enter the *bus plate number*:", parse_mode="Markdown")
+
+#     bot.register_next_step_handler(message, ask_bus_plate_number)
+
+def ask_and_validate_bus_number(message):
     chat_id = message.chat.id
     bus_number = message.text.strip()
 
     if not re.fullmatch(r"[A-Za-z0-9\- ]{2,20}", bus_number):
         bot.send_message(chat_id, "❌ Please enter a valid bus number (alphanumeric, 2–20 characters).")
-        return bot.register_next_step_handler(message, ask_bus_ic)
+        return bot.register_next_step_handler(message, ask_and_validate_bus_number)
+
+    if chat_id not in user_sessions:
+        user_sessions[chat_id] = {}
 
     user_sessions[chat_id]['bus_number'] = bus_number
 
-    # NEW: Ask for bus plate
-    bot.send_message(chat_id, "Please enter the *bus plate number*:", parse_mode="Markdown")
+    # Try to recover session from sheet
+    session = recover_session_from_sheet(chat_id, bus_number)
 
-    bot.register_next_step_handler(message, ask_bus_plate_number)
+    if session:
+        user_sessions[chat_id] = session
+        bot.send_message(chat_id, f"🔄 Resuming tracking for *Bus {bus_number}* from checkpoint {session['step_index'] + 1}.", parse_mode="Markdown")
+        send_step_prompt(chat_id)
+    else:
+        user_sessions[chat_id] = {"step_index": 0, "bus_number": bus_number}
+        bot.send_message(chat_id, "🆕 New bus detected. Please enter the *Wave number* (1–9):", parse_mode="Markdown")
+        bot.register_next_step_handler(message, handle_wave_number)
+
+def ask_and_validate_bus_plate(message):
+    chat_id = message.chat.id
+    plate = message.text.strip().upper()
+
+    if not re.fullmatch(r"[A-Z0-9\- ]{3,15}", plate):
+        bot.send_message(chat_id, "❌ Please enter a valid bus plate number (e.g. 'ABC1234' or 'SGX-1234').")
+        return bot.register_next_step_handler(message, ask_and_validate_bus_plate)
+
+    user_sessions[chat_id]['bus_plate'] = plate
+    bot.send_message(chat_id, "Please enter the Bus IC's name:")
+    bot.register_next_step_handler(message, ask_bus_ic_name)
+
 
 def ask_bus_plate_number(message):
     chat_id = message.chat.id
@@ -269,7 +342,7 @@ def handle_step_callback(call):
 
 
             prompt_passenger_count(chat_id, step_key)
-            bot.register_next_step_handler(msg, handle_passenger_count_after_step)
+            # bot.register_next_step_handler(message, handle_passenger_count_after_step)
         else:
             print("[WARNING] Mismatch: button step vs current expected step")
 
@@ -326,6 +399,8 @@ def handle_passenger_count_after_step(message):
     if 'passenger_log' not in user_sessions[chat_id]:
         user_sessions[chat_id]['passenger_log'] = []
 
+    print(f"[DEBUG] expected: {expected_pax}, current: {current_pax}")
+
     if current_pax != expected_pax:
         user_sessions[chat_id]['pending_pax_mismatch'] = {
             'step_key': step_key,
@@ -363,15 +438,17 @@ def handle_mismatch_reason(message):
         bot.send_message(chat_id, "⚠️ No mismatch context found. Please retry the step.")
         return
 
-    # Save mismatch count into passenger log
+    # Ensure passenger_log exists
     if 'passenger_log' not in user_sessions[chat_id]:
         user_sessions[chat_id]['passenger_log'] = []
 
+    # Log count
     user_sessions[chat_id]['passenger_log'].append({
         'step': mismatch['step_key'],
         'count': mismatch['actual_count']
     })
 
+    # ✅ Now log to sheet, with red remark
     log_checkpoint_to_sheet(
         chat_id,
         mismatch['step_key'],
@@ -383,6 +460,7 @@ def handle_mismatch_reason(message):
     bot.send_message(chat_id, "✅ Passenger count and remark recorded.")
     user_sessions[chat_id]['step_index'] += 1
     send_step_prompt(chat_id)
+
 
 
 
@@ -462,18 +540,18 @@ def log_checkpoint_to_sheet(chat_id, step_key, actual_pax=None, expected_pax=Non
     worksheet = sh.worksheet('D1')
     columns = get_column_mapping(worksheet)
 
-    # Map step to the actual time column name in the sheet
-    step_to_column = {
-        "left_star": "Time departed from Star/PTC",
-        "reached_sg_custom": "Time reach SG custom",
-        "left_sg_custom": "Time leave SG custom",
-        "reached_my_custom": "Time reach MY custom",
-        "left_my_custom": "Time leave MY custom",
-        "reached_rest_stop": "Time Reach yong peng",
-        "left_rest_stop": "Time Leave yong peng",
-        "at_30_min_mark": "Time reach 30 min mark",
-        "reached_runway": "Time bus reach sunway"
-    }
+    # # Map step to the actual time column name in the sheet
+    # step_to_column = {
+    #     "left_star": "Time departed from Star/PTC",
+    #     "reached_sg_custom": "Time reach SG custom",
+    #     "left_sg_custom": "Time leave SG custom",
+    #     "reached_my_custom": "Time reach MY custom",
+    #     "left_my_custom": "Time leave MY custom",
+    #     "reached_rest_stop": "Time Reach yong peng",
+    #     "left_rest_stop": "Time Leave yong peng",
+    #     "at_30_min_mark": "Time reach 30 min mark",
+    #     "reached_runway": "Time bus reach sunway"
+    # }
 
 
     if step_key not in step_to_column:
@@ -504,6 +582,57 @@ def log_checkpoint_to_sheet(chat_id, step_key, actual_pax=None, expected_pax=Non
 
     print(f"[LOG] Logged step '{step_key}' at {current_time} for user {chat_id} in row {row}")
 
+# if user filling halfway we recover the session.
+def recover_session_from_sheet(chat_id, bus_number):
+    worksheet = sh.worksheet('D1')
+    bus_numbers = worksheet.col_values(2)  # Column 2 = "Bus #" (1-indexed)
+
+    for i, b in enumerate(bus_numbers):
+        if b.strip().lower() == bus_number.strip().lower():
+            row = i + 1
+            values = worksheet.row_values(row)
+            col_map = get_column_mapping(worksheet)
+
+            # Helper to safely extract a value by header name
+            def safe_get(col_name):
+                idx = col_map.get(col_name.strip().lower())
+                return values[idx - 1].strip() if idx and len(values) >= idx else ""
+
+            # Extract fields
+            wave = safe_get("wave")
+            cgs = safe_get("cgs")
+            bus_plate = safe_get("bus plate")
+            pax = safe_get("no. of pax")
+            bus_ic = safe_get("bus ic")
+            bus_2ic = safe_get("bus 2ic")
+
+            # Step recovery
+            step_index = 0
+            for step in steps:
+                col_name = step_to_column.get(step)
+                col_idx = col_map.get(col_name.strip().lower())
+                if col_idx and len(values) >= col_idx and values[col_idx - 1].strip():
+                    step_index += 1
+                else:
+                    break
+
+            return {
+                "step_index": step_index,
+                "bus_number": bus_number,
+                "row": row,
+                "wave": wave,
+                "cgs": cgs,
+                "bus_plate": bus_plate,
+                "passenger_count": pax,
+                "bus_ic": bus_ic,
+                "bus_2ic": bus_2ic
+            }
+
+    return None
+
+
+
+
 # test code
 import random
 @bot.message_handler(commands=['simulate'])
@@ -530,6 +659,7 @@ def simulate_test_user(message):
         f"User ID: {fake_chat_id}\n"
         f"Row {row} assigned for {bus_number}."
     )
+
 
 
 bot.infinity_polling()  
