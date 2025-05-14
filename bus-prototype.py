@@ -68,6 +68,9 @@ def handle_start(message):
     bot.send_message(message.chat.id, "🚌 Welcome! Please enter the *bus number* to begin or resume tracking:", parse_mode="Markdown")
     bot.register_next_step_handler(message, lambda msg: intercept_end_command(msg,ask_and_validate_bus_number))
 
+def is_valid_bus_number(text):
+    return re.fullmatch(r"[A-Za-z]{1,2}[0-9]{1,2}", text.strip()) is not None
+
 def handle_bus_recovery_check(message):
     chat_id = message.chat.id
     bus_number = message.text.strip()
@@ -155,10 +158,10 @@ def ask_and_validate_bus_number(message):
     chat_id = message.chat.id
     bus_number = message.text.strip()
 
-    if not re.fullmatch(r"[A-Za-z0-9\- ]{2,20}", bus_number):
-        bot.send_message(chat_id, "❌ Please enter a valid bus number (alphanumeric, 2–20 characters).")
+    if not is_valid_bus_number(bus_number):
+        bot.send_message(chat_id, "❌ Please enter a valid bus number (e.g., A1, B2).")
         return bot.register_next_step_handler(message, lambda msg: intercept_end_command(msg, ask_and_validate_bus_number))
-
+    
     if chat_id not in user_sessions:
         user_sessions[chat_id] = {}
 
@@ -502,7 +505,7 @@ def get_or_create_user_row(bus_number):
 
     # If not found, append a new row
     new_row_index = len(bus_numbers) + 1
-    worksheet.update_cell(new_row_index, 1, bus_number)
+    # worksheet.update_cell(new_row_index, 1, bus_number)
     return new_row_index
 
 
