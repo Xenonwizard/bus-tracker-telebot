@@ -183,7 +183,7 @@ def ask_and_validate_bus_plate(message):
     chat_id = message.chat.id
     plate = message.text.strip().upper()
 
-    if not re.fullmatch(r"[A-Z0-9\- ]{3,15}", plate):
+    if not re.fullmatch(r"(?=.*[A-Z])[A-Z0-9\- ]{3,15}", plate):
         bot.send_message(chat_id, "❌ Please enter a valid bus plate number (e.g. 'ABC1234' or 'SGX-1234').")
         return bot.register_next_step_handler(message, lambda msg: intercept_end_command(msg,ask_and_validate_bus_plate))
 
