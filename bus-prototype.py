@@ -23,6 +23,9 @@ sh = gc.open("AL25 Everbridge Tracking")
 # Store user sessions in memory (for a live bot, consider a DB)
 user_sessions = {}
 
+# Cache the headers for optimization
+HEADER_CACHE = {}
+
 # Define the sequential steps with button prompts
 steps = [
     "left_star", "reached_sg_custom", "left_sg_custom",
@@ -50,8 +53,8 @@ step_to_column = {
     "left_sg_custom": "Time leave SG custom",
     "reached_my_custom": "Time reach MY custom",
     "left_my_custom": "Time leave MY custom",
-    "reached_rest_stop": "Time Reach yong peng",
-    "left_rest_stop": "Time Leave yong peng",
+    "reached_rest_stop": "Time Reach Rest Stop",
+    "left_rest_stop": "Time Leave Rest Stop",
     "at_30_min_mark": "Time reach 30 min mark",
     "reached_runway": "Time bus reach sunway"
 }
@@ -137,22 +140,6 @@ def edit_details(message):
     )
     bot.register_next_step_handler(msg, lambda msg1: intercept_end_command(msg1,ask_and_validate_bus_number))
 
-
-
-# def ask_bus_ic(message):
-#     chat_id = message.chat.id
-#     bus_number = message.text.strip()
-
-#     if not re.fullmatch(r"[A-Za-z0-9\- ]{2,20}", bus_number):
-#         bot.send_message(chat_id, "❌ Please enter a valid bus number (alphanumeric, 2–20 characters).")
-#         return bot.register_next_step_handler(message, ask_bus_ic)
-
-#     user_sessions[chat_id]['bus_number'] = bus_number
-
-#     # NEW: Ask for bus plate
-#     bot.send_message(chat_id, "Please enter the *bus plate number*:", parse_mode="Markdown")
-
-#     bot.register_next_step_handler(message, ask_bus_plate_number)
 
 def ask_and_validate_bus_number(message):
     chat_id = message.chat.id
@@ -522,9 +509,22 @@ def clear_cell(chat_id):
     print(f"[LOG] {chat_id} cleared step at row {row}")
 
 # read the column head
+# def get_column_mapping(worksheet):
+#     header_row = worksheet.row_values(1)
+#     return {header.strip().lower(): idx + 1 for idx, header in enumerate(header_row)}
+
 def get_column_mapping(worksheet):
+    title = worksheet.title  # e.g. 'D1'
+
+    if title in HEADER_CACHE:
+        return HEADER_CACHE[title]
+
     header_row = worksheet.row_values(1)
-    return {header.strip().lower(): idx + 1 for idx, header in enumerate(header_row)}
+    column_map = {header.strip().lower(): idx + 1 for idx, header in enumerate(header_row)}
+
+    HEADER_CACHE[title] = column_map
+    return column_map
+
 
 # this logs the bus number, bus plate, no. of pax, bus ic and bus 2ic down into the sheet.
 def log_initial_details_to_sheet(chat_id):
@@ -534,13 +534,19 @@ def log_initial_details_to_sheet(chat_id):
     columns = get_column_mapping(worksheet)
 
     try:
-        worksheet.update_cell(row, columns['wave'], session['wave'])
-        worksheet.update_cell(row, columns['cgs'], session['cgs'])
-        worksheet.update_cell(row, columns['bus #'], session['bus_number'])
-        worksheet.update_cell(row, columns['bus plate'], session['bus_plate'])
-        worksheet.update_cell(row, columns['no. of pax'], session['passenger_count'])
-        worksheet.update_cell(row, columns['bus ic'], session['bus_ic'])
-        worksheet.update_cell(row, columns['bus 2ic'], session['bus_2ic'])
+        worksheet.update(
+            f"A{row}:G{row}",
+            [[
+                session['wave'],
+                session['bus_number'],
+                session['bus_plate'],
+                session['passenger_count'],
+                session['bus_ic'],
+                session['bus_2ic'],
+                session['cgs'],
+            ]]
+        )
+
     except KeyError as e:
         bot.send_message(chat_id, f"❌ Column header not found in sheet: {e}")
         print(f"[ERROR] Column not found: {e}")
@@ -559,20 +565,7 @@ def log_checkpoint_to_sheet(chat_id, step_key, actual_pax=None, expected_pax=Non
     worksheet = sh.worksheet('D1')
     columns = get_column_mapping(worksheet)
 
-    # # Map step to the actual time column name in the sheet
-    # step_to_column = {
-    #     "left_star": "Time departed from Star/PTC",
-    #     "reached_sg_custom": "Time reach SG custom",
-    #     "left_sg_custom": "Time leave SG custom",
-    #     "reached_my_custom": "Time reach MY custom",
-    #     "left_my_custom": "Time leave MY custom",
-    #     "reached_rest_stop": "Time Reach yong peng",
-    #     "left_rest_stop": "Time Leave yong peng",
-    #     "at_30_min_mark": "Time reach 30 min mark",
-    #     "reached_runway": "Time bus reach sunway"
-    # }
-
-
+    # step_to_column is a global var
     if step_key not in step_to_column:
         print(f"[INFO] No sheet mapping for step '{step_key}', skipping log.")
         return
@@ -590,6 +583,9 @@ def log_checkpoint_to_sheet(chat_id, step_key, actual_pax=None, expected_pax=Non
             })
         else:
             worksheet.update_cell(row, remarks_col_index, "")
+            worksheet.format(gspread.utils.rowcol_to_a1(row, remarks_col_index), {
+            "backgroundColor": {"red": 1, "green": 1, "blue": 1}  # white background - reset the column if it was red.
+            })
 
     except KeyError as e:
         print(f"[ERROR] Column header not found: {e}")
@@ -604,7 +600,16 @@ def log_checkpoint_to_sheet(chat_id, step_key, actual_pax=None, expected_pax=Non
 # if user filling halfway we recover the session.
 def recover_session_from_sheet(chat_id, bus_number):
     worksheet = sh.worksheet('D1')
-    bus_numbers = worksheet.col_values(2)  # Column 2 = "Bus #" (1-indexed)
+
+    columns = get_column_mapping(worksheet)
+    bus_col_index = columns.get("bus #")  # Get index from header
+
+    if not bus_col_index:
+        print("[ERROR] 'Bus #' column not found in header.")
+        return None
+
+    bus_numbers = worksheet.col_values(bus_col_index)
+    # bus_numbers = worksheet.col_values(2)  # Column 2 = "Bus #" (1-indexed)
 
     for i, b in enumerate(bus_numbers):
         if b.strip().lower() == bus_number.strip().lower():
