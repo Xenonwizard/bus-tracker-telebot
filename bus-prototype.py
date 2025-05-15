@@ -5,20 +5,31 @@ from telebot.types import InlineKeyboardMarkup, InlineKeyboardButton
 import re
 import gspread
 from datetime import datetime
+import base64
+import os
 
 # Load environment variables from .env file
 load_dotenv()
 
 # Replace 'YOUR_BOT_TOKEN' with your actual bot token
 BOT_TOKEN = os.getenv('TELE_TOKEN')
-JSON_TOKEN = os.getenv('JSON_PATHNAME')
+
+# running locally to connect google sheets
+# JSON_TOKEN = os.getenv('JSON_PATHNAME')
+# gc = gspread.service_account(filename=JSON_TOKEN)
+
+
+# Running on railway server
+if os.getenv("GOOGLE_CREDS_BASE64"):
+    with open("credentials.json", "wb") as f:
+        f.write(base64.b64decode(os.getenv("GOOGLE_CREDS_BASE64")))
+gc = gspread.service_account(filename="credentials.json")
+
+sh = gc.open("AL25 Everbridge Tracking")
 
 # Initialize the bot
 bot = telebot.TeleBot(BOT_TOKEN)
 
-# Initialize cnnecting to google sheets
-gc = gspread.service_account(filename=JSON_TOKEN)
-sh = gc.open("AL25 Everbridge Tracking")
 
 # Store user sessions in memory (for a live bot, consider a DB)
 user_sessions = {}
