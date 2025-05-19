@@ -7,6 +7,7 @@ import gspread
 from datetime import datetime
 import base64
 import os
+from zoneinfo import ZoneInfo
 
 # Load environment variables from .env file
 load_dotenv()
@@ -602,7 +603,7 @@ def log_checkpoint_to_sheet(chat_id, step_key, actual_pax=None, expected_pax=Non
         print(f"[ERROR] Column header not found: {e}")
         return
 
-    current_time = datetime.now().strftime("%H:%M")
+    current_time = datetime.now(ZoneInfo("Asia/Singapore")).strftime("%H:%M")
     worksheet.update_cell(row, time_col_index, current_time)
     worksheet.update_cell(row, tele_col_index, True)
 
