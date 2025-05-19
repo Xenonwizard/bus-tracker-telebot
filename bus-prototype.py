@@ -5,9 +5,9 @@ from telebot.types import InlineKeyboardMarkup, InlineKeyboardButton
 import re
 import gspread
 from datetime import datetime
-import base64
 import os
 from zoneinfo import ZoneInfo
+from flask import Flask, request
 
 # Load environment variables from .env file
 load_dotenv()
@@ -30,6 +30,17 @@ sh = gc.open("AL25 Everbridge Tracking")
 
 # Initialize the bot
 bot = telebot.TeleBot(BOT_TOKEN)
+
+
+app = Flask(__name__)
+
+WEBHOOK_TOKEN = BOT_TOKEN  # use token in URL path
+WEBHOOK_PATH = f"/{WEBHOOK_TOKEN}"
+WEBHOOK_URL = os.getenv("WEBHOOK_URL") + WEBHOOK_PATH  # set this in your environment, e.g. https://your-app-name.onrender.com/<token>
+
+# Remove any previous webhook (optional, but safe)
+bot.remove_webhook()
+bot.set_webhook(url=WEBHOOK_URL)
 
 
 # Store user sessions in memory (for a live bot, consider a DB)
@@ -697,5 +708,17 @@ def simulate_test_user(message):
     )
 
 
+# Webhook endpoint
+@app.route(WEBHOOK_PATH, methods=['POST'])
+def webhook():
+    if request.headers.get('content-type') == 'application/json':
+        json_string = request.get_data().decode('utf-8')
+        update = telebot.types.Update.de_json(json_string)
+        bot.process_new_updates([update])
+        return '', 200
+    else:
+        return 'Invalid content type', 403
 
-bot.infinity_polling()  
+# bot.infinity_polling()  
+if __name__ == "__main__":
+    app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 5000)))
