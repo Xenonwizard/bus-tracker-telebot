@@ -15,15 +15,15 @@ load_dotenv()
 BOT_TOKEN = os.getenv('TELE_TOKEN')
 
 # running locally to connect google sheets
-# JSON_TOKEN = os.getenv('JSON_PATHNAME')
-# gc = gspread.service_account(filename=JSON_TOKEN)
+JSON_TOKEN = os.getenv('JSON_PATHNAME')
+gc = gspread.service_account(filename=JSON_TOKEN)
 
 
-# Running on railway server
-if os.getenv("GOOGLE_CREDS_BASE64"):
-    with open("credentials.json", "wb") as f:
-        f.write(base64.b64decode(os.getenv("GOOGLE_CREDS_BASE64")))
-gc = gspread.service_account(filename="credentials.json")
+# # Running on railway server
+# if os.getenv("GOOGLE_CREDS_BASE64"):
+#     with open("credentials.json", "wb") as f:
+#         f.write(base64.b64decode(os.getenv("GOOGLE_CREDS_BASE64")))
+# gc = gspread.service_account(filename="credentials.json")
 
 sh = gc.open("AL25 Everbridge Tracking")
 
