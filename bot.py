@@ -1,3 +1,6 @@
+# bot.py
+
+import json
 import telebot
 import os
 from dotenv import load_dotenv
@@ -5,9 +8,17 @@ from telebot.types import InlineKeyboardMarkup, InlineKeyboardButton
 import re
 import gspread
 from datetime import datetime
-import os
 from zoneinfo import ZoneInfo
-from flask import Flask, request
+
+# Replace 'YOUR_BOT_TOKEN' with your actual bot token
+BOT_TOKEN = os.getenv('TELE_TOKEN')
+
+bot = telebot.TeleBot(BOT_TOKEN)
+
+def process_update_from_webhook(update_json):
+    update = telebot.types.Update.de_json(json.loads(update_json))
+    bot.process_new_updates([update])
+
 
 # Load environment variables from .env file
 load_dotenv()
@@ -32,15 +43,15 @@ sh = gc.open("AL25 Everbridge Tracking")
 bot = telebot.TeleBot(BOT_TOKEN)
 
 
-app = Flask(__name__)
+# app = Flask(__name__)
 
 WEBHOOK_TOKEN = BOT_TOKEN  # use token in URL path
 WEBHOOK_PATH = f"/{WEBHOOK_TOKEN}"
 WEBHOOK_URL = os.getenv("WEBHOOK_URL") + WEBHOOK_PATH  # set this in your environment, e.g. https://your-app-name.onrender.com/<token>
 
-# Remove any previous webhook (optional, but safe)
-bot.remove_webhook()
-bot.set_webhook(url=WEBHOOK_URL)
+# # Remove any previous webhook (optional, but safe)
+# bot.remove_webhook()
+# bot.set_webhook(url=WEBHOOK_URL)
 
 
 # Store user sessions in memory (for a live bot, consider a DB)
@@ -680,45 +691,46 @@ def recover_session_from_sheet(chat_id, bus_number):
 
 
 
-# test code
-import random
-@bot.message_handler(commands=['simulate'])
-def simulate_test_user(message):
-    fake_chat_id = random.randint(1000000, 9999999)  # Unique each time
+# # test code
+# import random
+# @bot.message_handler(commands=['simulate'])
+# def simulate_test_user(message):
+#     fake_chat_id = random.randint(1000000, 9999999)  # Unique each time
 
-    bus_number = f"TestBus{fake_chat_id % 1000}"
-    user_sessions[fake_chat_id] = {
-        "step_index": 0,
-        "bus_number": bus_number,
-        "bus_plate": f"TEST-{fake_chat_id % 9999}",
-        "bus_ic": "SimIC",
-        "bus_2ic": "Sim2IC",
-        "passenger_count": str(random.randint(30, 50))
-    }
+#     bus_number = f"TestBus{fake_chat_id % 1000}"
+#     user_sessions[fake_chat_id] = {
+#         "step_index": 0,
+#         "bus_number": bus_number,
+#         "bus_plate": f"TEST-{fake_chat_id % 9999}",
+#         "bus_ic": "SimIC",
+#         "bus_2ic": "Sim2IC",
+#         "passenger_count": str(random.randint(30, 50))
+#     }
 
-    row = get_or_create_user_row(bus_number)
-    user_sessions[fake_chat_id]['row'] = row
-    log_initial_details_to_sheet(fake_chat_id)
+#     row = get_or_create_user_row(bus_number)
+#     user_sessions[fake_chat_id]['row'] = row
+#     log_initial_details_to_sheet(fake_chat_id)
 
-    bot.send_message(
-        message.chat.id,
-        f"✅ Simulated session created.\n"
-        f"User ID: {fake_chat_id}\n"
-        f"Row {row} assigned for {bus_number}."
-    )
+#     bot.send_message(
+#         message.chat.id,
+#         f"✅ Simulated session created.\n"
+#         f"User ID: {fake_chat_id}\n"
+#         f"Row {row} assigned for {bus_number}."
+#     )
 
 
 # Webhook endpoint
-@app.route(WEBHOOK_PATH, methods=['POST'])
-def webhook():
-    if request.headers.get('content-type') == 'application/json':
-        json_string = request.get_data().decode('utf-8')
-        update = telebot.types.Update.de_json(json_string)
-        bot.process_new_updates([update])
-        return '', 200
-    else:
-        return 'Invalid content type', 403
+# @app.route(WEBHOOK_PATH, methods=['POST'])
+# def webhook():
+#     if request.headers.get('content-type') == 'application/json':
+#         json_string = request.get_data().decode('utf-8')
+#         update = telebot.types.Update.de_json(json_string)
+#         bot.process_new_updates([update])
+#         return '', 200
+#     else:
+#         return 'Invalid content type', 403
 
-# bot.infinity_polling()  
-if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 5000)))
+# # bot.infinity_polling()  
+# if __name__ == "__main__":
+#     app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 5000)))
+
