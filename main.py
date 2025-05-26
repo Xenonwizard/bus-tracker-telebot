@@ -11,6 +11,10 @@ load_dotenv()
 app = FastAPI()
 
 BOT_TOKEN = os.getenv("TELE_TOKEN")
+CLOUD_RUN_BASE_URL = os.getenv("WEBHOOK_URL")
+WEBHOOK_URL = f"{CLOUD_RUN_BASE_URL}/{BOT_TOKEN}"
+
+TELEGRAM_API_URL = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/setWebhook"
 print("📢 Loaded BOT_TOKEN:", BOT_TOKEN[:10] + "..." if BOT_TOKEN else "None")
 
 # Setup Google Sheets credentials for Cloud Run
@@ -53,52 +57,13 @@ async def telegram_webhook(request: Request):
 
 @app.on_event("startup")
 async def startup_event():
-    """Set webhook when the service starts"""
-    print("🚀 Starting up...")
-    
-    # Get the service URL from Cloud Run metadata (if available)
-    try:
-        # Try to get Cloud Run service URL
-        import requests
-        metadata_server = "http://metadata.google.internal/computeMetadata/v1/"
-        metadata_flavor = {"Metadata-Flavor": "Google"}
-        
-        # Get project ID
-        project_response = requests.get(
-            metadata_server + "project/project-id",
-            headers=metadata_flavor,
-            timeout=5
+   async with httpx.AsyncClient() as client:
+        response = await client.post(
+            TELEGRAM_API_URL,
+            json={"url": WEBHOOK_URL},
+            headers={"Content-Type": "application/json"}
         )
-        project_id = project_response.text
-        
-        # Get service name and region from environment or defaults
-        service_name = os.getenv("K_SERVICE", "telegram-bot")
-        region = os.getenv("FUNCTION_REGION", "asia-southeast-1")
-        
-        # Construct Cloud Run URL
-        webhook_url = f"https://{service_name}-{project_id}.a.run.app"
-        
-    except Exception as e:
-        print(f"⚠️ Could not get Cloud Run URL from metadata: {e}")
-        # Fallback to environment variable
-        webhook_url = os.getenv("WEBHOOK_URL")
-    
-    if webhook_url and BOT_TOKEN:
-        full_webhook_url = f"{webhook_url}/{BOT_TOKEN}"
-        try:
-            response = requests.post(
-                f"https://api.telegram.org/bot{BOT_TOKEN}/setWebhook",
-                json={"url": full_webhook_url},
-                timeout=10
-            )
-            if response.status_code == 200:
-                print(f"✅ Webhook set successfully: {full_webhook_url}")
-            else:
-                print(f"❌ Failed to set webhook: {response.text}")
-        except Exception as e:
-            print(f"❌ Error setting webhook: {e}")
-    else:
-        print("⚠️ Missing WEBHOOK_URL or BOT_TOKEN")
+        print("Webhook set response:", response.status_code, response.json())
 
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 8080))
