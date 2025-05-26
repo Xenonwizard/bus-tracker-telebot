@@ -21,12 +21,12 @@ Create a `.env` file in your project root:
 ```env
 TELE_TOKEN=your_telegram_bot_token
 WEBHOOK_URL=https://your-public-url.com
-CREDENTIALS_JSON={"type": "service_account", "project_id": "...", "private_key": "..."}
+JSON_PATHNAME={"type": "service_account", "project_id": "...", "private_key": "..."}
 ```
 
-> 💡 If `CREDENTIALS_JSON` is too large or multi-line, export it directly in terminal:
+> 💡 If `JSON_PATHNAME` is too large or multi-line, export it directly in terminal:
 ```bash
-export CREDENTIALS_JSON="$(cat credentials.json)"
+export JSON_PATHNAME="$(cat credentials.json)"
 ```
 
 ---
@@ -77,7 +77,7 @@ gcloud run deploy bus-tracker-bot \
   --platform managed \
   --region asia-southeast1 \
   --allow-unauthenticated \
-  --set-secrets CREDENTIALS_JSON=credentials-json:latest \
+  --set-secrets JSON_PATHNAME=credentials-json:latest \
   --set-env-vars TELE_TOKEN=your_bot_token,WEBHOOK_URL=https://your-service-url
 ```
 
