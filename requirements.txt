@@ -6,3 +6,4 @@ python-dotenv==1.1.0
 uvicorn
 gspread==6.2.1
 requests
+httpx

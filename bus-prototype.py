@@ -10,6 +10,8 @@ from datetime import datetime
 import os
 from zoneinfo import ZoneInfo
 from flask import Flask, request
+from google.oauth2 import service_account
+import json
 
 # Load environment variables from .env file
 load_dotenv()
@@ -17,9 +19,19 @@ load_dotenv()
 # Replace 'YOUR_BOT_TOKEN' with your actual bot token
 BOT_TOKEN = os.getenv('TELE_TOKEN')
 
+
+# for secret manager in GCP
 # running locally to connect google sheets
-JSON_TOKEN = os.getenv('JSON_PATHNAME')
-gc = gspread.service_account(filename=JSON_TOKEN)
+json_creds = os.getenv("CREDENTIALS_JSON")
+
+if not json_creds:
+    raise ValueError("Missing CREDENTIALS_JSON environment variable")
+
+# Convert the JSON string to a dict
+creds_dict = json.loads(json_creds)
+
+# Load directly
+credentials = service_account.Credentials.from_service_account_info(creds_dict)
 
 
 # # Running on railway server

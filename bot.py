@@ -9,6 +9,7 @@ import re
 import gspread
 from datetime import datetime
 from zoneinfo import ZoneInfo
+from google.oauth2.service_account import Credentials
 
 # Replace 'YOUR_BOT_TOKEN' with your actual bot token
 BOT_TOKEN = os.getenv('TELE_TOKEN')
@@ -26,11 +27,28 @@ load_dotenv()
 # Replace 'YOUR_BOT_TOKEN' with your actual bot token
 BOT_TOKEN = os.getenv('TELE_TOKEN')
 
-# running locally to connect google sheets
-JSON_TOKEN = os.getenv('JSON_PATHNAME')
-gc = gspread.service_account(filename=JSON_TOKEN)
+
+# # running locally to connect google sheets
+# JSON_TOKEN = os.getenv('JSON_PATHNAME')
+# gc = gspread.service_account(filename=JSON_TOKEN)
 
 
+
+# Load the raw JSON string from the environment
+json_str = os.getenv("JSON_PATHNAME")  # or 'JSON_PATHNAME' if that’s what you're using
+
+if not json_str:
+    raise ValueError("Missing CREDENTIALS_JSON environment variable")
+
+# Parse the JSON string into a Python dict
+info = json.loads(json_str)
+
+# Build credentials from the info
+scopes = ["https://www.googleapis.com/auth/spreadsheets", "https://www.googleapis.com/auth/drive"]
+credentials = Credentials.from_service_account_info(info, scopes=scopes)
+
+# Authenticate gspread with the in-memory credentials
+gc = gspread.authorize(credentials)
 # # Running on railway server
 # if os.getenv("GOOGLE_CREDS_BASE64"):
 #     with open("credentials.json", "wb") as f:

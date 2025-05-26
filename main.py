@@ -5,6 +5,7 @@ from bot import process_update_from_webhook
 import uvicorn
 import requests
 import base64
+import httpx
 
 load_dotenv()
 
@@ -14,7 +15,7 @@ BOT_TOKEN = os.getenv("TELE_TOKEN")
 CLOUD_RUN_BASE_URL = os.getenv("WEBHOOK_URL")
 WEBHOOK_URL = f"{CLOUD_RUN_BASE_URL}/{BOT_TOKEN}"
 
-TELEGRAM_API_URL = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/setWebhook"
+TELEGRAM_API_URL = f"https://api.telegram.org/bot{BOT_TOKEN}/setWebhook"
 print("📢 Loaded BOT_TOKEN:", BOT_TOKEN[:10] + "..." if BOT_TOKEN else "None")
 
 # Setup Google Sheets credentials for Cloud Run
