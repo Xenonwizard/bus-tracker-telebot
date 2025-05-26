@@ -9,7 +9,6 @@ import re
 import gspread
 from datetime import datetime
 from zoneinfo import ZoneInfo
-from google.oauth2.service_account import Credentials
 
 # Replace 'YOUR_BOT_TOKEN' with your actual bot token
 BOT_TOKEN = os.getenv('TELE_TOKEN')
@@ -35,7 +34,7 @@ BOT_TOKEN = os.getenv('TELE_TOKEN')
 
 
 # Load the raw JSON string from the environment
-json_str = os.getenv("JSON_PATHNAME")  # or 'JSON_PATHNAME' if that’s what you're using
+json_str = os.getenv("CREDENTIALS_JSON")  # or 'JSON_PATHNAME' if that’s what you're using
 
 if not json_str:
     raise ValueError("Missing CREDENTIALS_JSON environment variable")
