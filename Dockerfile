@@ -1,10 +1,16 @@
-FROM python:3.11
+FROM python:3.11-slim
 
 WORKDIR /app
 
+# Install dependencies
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
+
+# Copy all code files including credentials.json
 COPY . .
 
-RUN pip install --upgrade pip
-RUN pip install -r requirements.txt
+EXPOSE 8080
 
-CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000"]
+# Use main.py to launch, since it handles uvicorn and webhook logic
+CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8080"]
+
