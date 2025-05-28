@@ -9,7 +9,7 @@ import re
 import gspread
 from datetime import datetime
 from zoneinfo import ZoneInfo
-from google.oauth2.credentials import Credentials
+from google.oauth2 import service_account  # ✅ Correct import
 # Replace 'YOUR_BOT_TOKEN' with your actual bot token
 BOT_TOKEN = os.getenv('TELE_TOKEN')
 
@@ -23,17 +23,14 @@ def process_update_from_webhook(update_json):
 # Load environment variables from .env file
 load_dotenv()
 
-# Replace 'YOUR_BOT_TOKEN' with your actual bot token
-BOT_TOKEN = os.getenv('TELE_TOKEN')
 
-
-# # running locally to connect google sheets
+# UNCOMMENT TO run locally to connect google sheets
 # JSON_TOKEN = os.getenv('JSON_PATHNAME')
 # gc = gspread.service_account(filename=JSON_TOKEN)
 
 
 
-# Load the raw JSON string from the environment
+# UNCOMMENT to run on cloud run, this loads the raw JSON string from the environment
 json_str = os.getenv("JSON_PATHNAME")  # or 'JSON_PATHNAME' if that’s what you're using
 
 if not json_str:
@@ -44,15 +41,11 @@ info = json.loads(json_str)
 
 # Build credentials from the info
 scopes = ["https://www.googleapis.com/auth/spreadsheets", "https://www.googleapis.com/auth/drive"]
-credentials = Credentials.from_service_account_info(info, scopes=scopes)
 
-# Authenticate gspread with the in-memory credentials
+credentials = service_account.Credentials.from_service_account_info(info, scopes=scopes)
+
 gc = gspread.authorize(credentials)
-# # Running on railway server
-# if os.getenv("GOOGLE_CREDS_BASE64"):
-#     with open("credentials.json", "wb") as f:
-#         f.write(base64.b64decode(os.getenv("GOOGLE_CREDS_BASE64")))
-# gc = gspread.service_account(filename="credentials.json")
+
 
 sh = gc.open("AL25 Everbridge Tracking")
 
@@ -157,12 +150,16 @@ def handle_wave_number(message):
     chat_id = message.chat.id
     wave = message.text.strip()
 
-    if not wave.isdigit() or not (1 <= int(wave) <= 9):
-        bot.send_message(chat_id, "❌ Please enter a valid Wave number (1–9).")
+    # ✅ Exit early if user sends /end
+    if wave.lower() == "/end":
+        return end_bot(message)
+
+    if not wave.isdigit() or not (0 <= int(wave) <= 5):
+        bot.send_message(chat_id, "❌ Please enter a valid Wave number (1–5).")
         return bot.register_next_step_handler(message,lambda msg: intercept_end_command(msg, handle_wave_number))
 
     user_sessions[chat_id]['wave'] = wave
-    bot.send_message(chat_id, "Please enter the *CGs' names* (comma-separated if more than one):", parse_mode="Markdown")
+    bot.send_message(chat_id, "Please enter the *CGs' names* E.g. NP1 NPD NPG NP1:", parse_mode="Markdown")
     bot.register_next_step_handler(message,lambda msg: intercept_end_command(msg, handle_cgs_input))
 
 
@@ -214,7 +211,7 @@ def ask_and_validate_bus_number(message):
         send_step_prompt(chat_id)
     else:
         user_sessions[chat_id] = {"step_index": 0, "bus_number": bus_number}
-        bot.send_message(chat_id, "🆕 New bus detected. Please enter the *Wave number* (1–9):", parse_mode="Markdown")
+        bot.send_message(chat_id, "🆕 New bus detected. Please enter the *Wave number* (1–5):", parse_mode="Markdown")
         bot.register_next_step_handler(message, handle_wave_number)
 
 def ask_and_validate_bus_plate(message):
@@ -386,13 +383,21 @@ def handle_step_callback(call):
             if step_key == "left_my_custom":
                 bot.send_message(
                     chat_id,
-                    "🔔 *Reminder for Bus IC:*\nPlease put back the event signages at the:\n"
+                    "🔔 *Reminder for Bus IC:*\nPlease put back the bus signages at the:\n"
                     "- 🪧 *Front*\n"
                     "- 🔲 *Left side*\n"
                     "- 🪧 *Rear* of the bus.",
                     parse_mode="Markdown"
                 )
-
+            elif step_key == "left_sg_custom":
+                bot.send_message(
+                    chat_id,
+                    "🔔 *Reminder for Bus IC:*\nPlease bring down at the MY customs:\n"
+                    "- 🪧 *3 Bus Signages (Front, Left, Rear)*\n"
+                    "- 😷 *N95 masks*\n"
+                    "- 🎒 *ALL BELONGINGS*",
+                    parse_mode="Markdown"
+                )
 
             prompt_passenger_count(chat_id, step_key)
             # bot.register_next_step_handler(message, handle_passenger_count_after_step)
@@ -408,6 +413,14 @@ def handle_step_callback(call):
 
         markup = InlineKeyboardMarkup()
         markup.add(InlineKeyboardButton("🟢 Okay", callback_data="begin_checklist"))
+        bot.send_message(
+                    chat_id,
+                    "🔔 *Reminder for Bus IC:*\nPlease put back the bus signages at the:\n"
+                    "- 🪧 *Front*\n"
+                    "- 🔲 *Left side*\n"
+                    "- 🪧 *Rear* of the bus.",
+                    parse_mode="Markdown"
+                )
         bot.send_message(chat_id, "Great! Please click the button below to begin the journey checklist.", reply_markup=markup)
 
     elif call.data == "begin_checklist":
