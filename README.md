@@ -21,12 +21,7 @@ Create a `.env` file in your project root:
 ```env
 TELE_TOKEN=your_telegram_bot_token
 WEBHOOK_URL=https://your-public-url.com
-JSON_PATHNAME={"type": "service_account", "project_id": "...", "private_key": "..."}
-```
-
-> 💡 If `JSON_PATHNAME` is too large or multi-line, export it directly in terminal:
-```bash
-export JSON_PATHNAME="$(cat credentials.json)"
+JSON_PATHNAME=<PATH TO JSON CREDENTIALS>
 ```
 
 ---
@@ -34,10 +29,6 @@ export JSON_PATHNAME="$(cat credentials.json)"
 ## 🧪 Run Locally
 
 Start the bot server:
-
-```bash
-uvicorn main:app --reload --host 0.0.0.0 --port 8080
-```
 
 Expose it with [ngrok](https://ngrok.com/):
 
@@ -47,6 +38,36 @@ ngrok http 8080
 
 Then set `WEBHOOK_URL=https://your-ngrok-url` in `.env`.
 
+UNCOMMENT this code in bot.py:
+
+```bash
+JSON_TOKEN = os.getenv('JSON_PATHNAME')
+gc = gspread.service_account(filename=JSON_TOKEN)
+```
+
+COMMENT this code in bot.py
+
+```bash
+json_str = os.getenv("JSON_PATHNAME")  # or 'JSON_PATHNAME' if that’s what you're using
+
+if not json_str:
+    raise ValueError("Missing CREDENTIALS_JSON environment variable")
+
+# Parse the JSON string into a Python dict
+info = json.loads(json_str)
+
+# Build credentials from the info
+scopes = ["https://www.googleapis.com/auth/spreadsheets", "https://www.googleapis.com/auth/drive"]
+
+credentials = service_account.Credentials.from_service_account_info(info, scopes=scopes)
+
+gc = gspread.authorize(credentials)
+```
+Run the code (Alternative is to run using docker):
+
+```bash
+uvicorn main:app --reload --host 0.0.0.0 --port 8080
+```
 ---
 
 ## 🐳 Docker Usage
@@ -69,6 +90,12 @@ docker run --env-file .env -p 8080:8080 bus-tracker-bot
 
 Use [Google Secret Manager](https://cloud.google.com/secret-manager) to store the contents of `credentials.json`.
 
+Deploy docker image on GCR:
+
+```bash
+gcloud builds submit --tag gcr.io/live-telebot-production/bus-tracker-bot
+```
+
 Then deploy with:
 
 ```bash
@@ -80,6 +107,7 @@ gcloud run deploy bus-tracker-bot \
   --set-secrets JSON_PATHNAME=credentials-json:latest \
   --set-env-vars TELE_TOKEN=your_bot_token,WEBHOOK_URL=https://your-service-url
 ```
+Or I usually use the console itself, its much easier.
 
 ---
 
@@ -99,5 +127,7 @@ gcloud run deploy bus-tracker-bot \
 - ✅ Passenger mismatch remark tracking
 - ✅ Cloud-compatible via webhook
 - ✅ Local or containerized development
+- ✅ Some Keynote reminders for BUS IC
+- ✅ Re-edit your bus details
 
 ---
