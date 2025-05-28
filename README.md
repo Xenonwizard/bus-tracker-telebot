@@ -38,14 +38,14 @@ ngrok http 8080
 
 Then set `WEBHOOK_URL=https://your-ngrok-url` in `.env`.
 
-UNCOMMENT this code in bot.py:
+UNCOMMENT this code in bot.py (For Running Locally):
 
 ```bash
 JSON_TOKEN = os.getenv('JSON_PATHNAME')
 gc = gspread.service_account(filename=JSON_TOKEN)
 ```
 
-COMMENT this code in bot.py
+COMMENT this code in bot.py (Cloud Run Code)
 
 ```bash
 json_str = os.getenv("JSON_PATHNAME")  # or 'JSON_PATHNAME' if that’s what you're using
@@ -89,6 +89,10 @@ docker run --env-file .env -p 8080:8080 bus-tracker-bot
 ## ☁️ Deploy to Cloud Run
 
 Use [Google Secret Manager](https://cloud.google.com/secret-manager) to store the contents of `credentials.json`.
+
+Uncomment the cloud run code as mentioned above.
+
+Build the Docker Image as mentioned above.
 
 Deploy docker image on GCR:
 
