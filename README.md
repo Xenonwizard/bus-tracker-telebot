@@ -132,7 +132,7 @@ Or I usually use the console itself, its much easier.
 - ✅ Cloud-compatible via webhook
 - ✅ Local or containerized development
 - ✅ Some Keynote reminders for BUS IC
-- ✅ Re-edit your bus details
+- ✅ Re-edit your bus plate and pax
 
 ---
 
