@@ -10,6 +10,7 @@ import gspread
 from datetime import datetime
 from zoneinfo import ZoneInfo
 from google.oauth2 import service_account  # ✅ Correct import
+import threading
 # Replace 'YOUR_BOT_TOKEN' with your actual bot token
 BOT_TOKEN = os.getenv('TELE_TOKEN')
 
@@ -46,8 +47,12 @@ credentials = service_account.Credentials.from_service_account_info(info, scopes
 
 gc = gspread.authorize(credentials)
 
+##DO NOT UNCOMMENT BEYOND THIS LINE HERE
 
-sh = gc.open("AL25 Everbridge Tracking")
+GSHEET_NAME = os.getenv("GSHEET_NAME", "AL25 Everbridge Tracking")
+GSHEET_TAB = os.getenv("GSHEET_TAB", "D1")
+
+sh = gc.open(GSHEET_NAME)
 
 # Initialize the bot
 bot = telebot.TeleBot(BOT_TOKEN)
@@ -159,7 +164,7 @@ def handle_wave_number(message):
         return bot.register_next_step_handler(message,lambda msg: intercept_end_command(msg, handle_wave_number))
 
     user_sessions[chat_id]['wave'] = wave
-    bot.send_message(chat_id, "Please enter the *CGs' names* E.g. NP1 NPD NPG NP1:", parse_mode="Markdown")
+    bot.send_message(chat_id, "Please enter the *CGs' names* (comma-separated if more than one): E.g. NP1, NPD, NPG, NP1:", parse_mode="Markdown")
     bot.register_next_step_handler(message,lambda msg: intercept_end_command(msg, handle_cgs_input))
 
 
@@ -273,7 +278,7 @@ def ask_passenger_count(message):
     user_sessions[chat_id]['passenger_count'] = passenger_count
 
     # Then validate
-    if not passenger_count.isdigit():
+    if not passenger_count.isdigit() or int(passenger_count) <= 0:
         bot.send_message(chat_id, "❌ Please enter a valid number for passenger count. E.g. 40")
         return bot.register_next_step_handler(message, lambda msg: intercept_end_command(msg,ask_passenger_count))
 
@@ -350,7 +355,8 @@ def handle_step_callback(call):
 
     if data == "go_back":
         if session["step_index"] > 0:
-            clear_cell(chat_id)
+            # clear_cell(chat_id)
+            threading.Thread(target=clear_cell, args=(chat_id,)).start()
             session["step_index"] -= 1
             current_step = steps[session["step_index"]]
             print(f"[ACTION] ⬅️ User {chat_id} went back to step index {session['step_index']} ({current_step})")
@@ -386,7 +392,8 @@ def handle_step_callback(call):
                     "🔔 *Reminder for Bus IC:*\nPlease put back the bus signages at the:\n"
                     "- 🪧 *Front*\n"
                     "- 🔲 *Left side*\n"
-                    "- 🪧 *Rear* of the bus.",
+                    "- 🪧 *Rear* of the bus.\n"
+                    "- Please remember to do a passport check with everyone in the bus too!",
                     parse_mode="Markdown"
                 )
             elif step_key == "left_sg_custom":
@@ -394,8 +401,9 @@ def handle_step_callback(call):
                     chat_id,
                     "🔔 *Reminder for Bus IC:*\nPlease bring down at the MY customs:\n"
                     "- 🪧 *3 Bus Signages (Front, Left, Rear)*\n"
-                    "- 😷 *N95 masks*\n"
-                    "- 🎒 *ALL BELONGINGS*",
+                    "- 😷 *Any Masks*\n"
+                    "- 🎒 *ALL BELONGINGS*\n"
+                    "- Please remember to do a passport check with everyone in the bus too!",
                     parse_mode="Markdown"
                 )
 
@@ -409,7 +417,11 @@ def handle_step_callback(call):
         chat_id = call.message.chat.id
 
         # 🔧 Log to the sheet now
-        log_initial_details_to_sheet(chat_id)
+        # log_initial_details_to_sheet(chat_id)
+        threading.Thread(
+            target=log_initial_details_to_sheet,
+            args=(chat_id,)
+        ).start()
 
         markup = InlineKeyboardMarkup()
         markup.add(InlineKeyboardButton("🟢 Okay", callback_data="begin_checklist"))
@@ -444,8 +456,16 @@ def prompt_passenger_count(chat_id, step_key):
 
 def handle_passenger_count_after_step(message):
     chat_id = message.chat.id
+    text = message.text.strip()  
     passenger_count = message.text.strip()
     print(f"[INPUT] 👥 Received passenger count: '{passenger_count}' from user {chat_id}")
+    
+    if text.startswith("/edit_pax"):
+        return handle_edit_pax(message)
+    if text.startswith("/edit_plate"):
+        return handle_edit_plate(message)
+    if text.startswith("/end"):
+        return end_bot(message)
 
     if not passenger_count.isdigit():
         print("[ERROR] ❌ Invalid passenger count input")
@@ -489,7 +509,11 @@ def handle_passenger_count_after_step(message):
     print(f"[STATE] Full log for user {chat_id}: {user_sessions[chat_id]['passenger_log']}")
 
     # ✅ NEW: Log time + checkbox to Google Sheet
-    log_checkpoint_to_sheet(chat_id, step_key)
+    # log_checkpoint_to_sheet(chat_id, step_key)
+    threading.Thread(
+        target=log_checkpoint_to_sheet,
+        args=(chat_id, step_key)
+    ).start()
 
     bot.send_message(chat_id, "✅ Passenger count recorded.")
     user_sessions[chat_id]['step_index'] += 1
@@ -498,7 +522,15 @@ def handle_passenger_count_after_step(message):
 def handle_mismatch_reason(message):
     chat_id = message.chat.id
     reason = message.text.strip()
+    text = message.text.strip()  
     mismatch = user_sessions[chat_id].pop('pending_pax_mismatch', None)
+
+    if text.startswith("/edit_pax"):
+        return handle_edit_pax(message)
+    if text.startswith("/edit_plate"):
+        return handle_edit_plate(message)
+    if text.startswith("/end"):
+        return end_bot(message)
 
     if not mismatch:
         bot.send_message(chat_id, "⚠️ No mismatch context found. Please retry the step.")
@@ -515,13 +547,22 @@ def handle_mismatch_reason(message):
     })
 
     # ✅ Now log to sheet, with red remark
-    log_checkpoint_to_sheet(
-        chat_id,
-        mismatch['step_key'],
-        actual_pax=mismatch['actual_count'],
-        expected_pax=mismatch['expected_count'],
-        remark=reason
-    )
+    # log_checkpoint_to_sheet(
+    #     chat_id,
+    #     mismatch['step_key'],
+    #     actual_pax=mismatch['actual_count'],
+    #     expected_pax=mismatch['expected_count'],
+    #     remark=reason
+    # )
+    threading.Thread(
+        target=log_checkpoint_to_sheet,
+        args=(chat_id, mismatch['step_key']),
+        kwargs={
+            "actual_pax": mismatch['actual_count'],
+            "expected_pax": mismatch['expected_count'],
+            "remark": reason
+        }
+    ).start()
 
     bot.send_message(chat_id, "✅ Passenger count and remark recorded.")
     user_sessions[chat_id]['step_index'] += 1
@@ -547,7 +588,7 @@ def end_bot(message):
 
 # it will check by bus number and see if the user has an existing code
 def get_or_create_user_row(bus_number):
-    worksheet = sh.worksheet('D1')
+    worksheet = sh.worksheet(GSHEET_TAB)
     bus_numbers = worksheet.col_values(1)  # Assuming column A has bus numbers
 
     for i, existing in enumerate(bus_numbers):
@@ -567,7 +608,7 @@ def clear_cell(chat_id):
 
     col_time = 8 + (3 * step_index)
     col_true = 9 + (3 * step_index)
-    worksheet = sh.worksheet('D1')
+    worksheet = sh.worksheet(GSHEET_TAB)
     worksheet.update_cell(row, col_time, '')
     worksheet.update_cell(row, col_true, '')
     print(f"[LOG] {chat_id} cleared step at row {row}")
@@ -594,7 +635,7 @@ def get_column_mapping(worksheet):
 def log_initial_details_to_sheet(chat_id):
     session = user_sessions[chat_id]
     row = session['row']
-    worksheet = sh.worksheet('D1')
+    worksheet = sh.worksheet(GSHEET_TAB)
     columns = get_column_mapping(worksheet)
 
     try:
@@ -626,7 +667,7 @@ def log_initial_details_to_sheet(chat_id):
 def log_checkpoint_to_sheet(chat_id, step_key, actual_pax=None, expected_pax=None, remark=None):
     session = user_sessions[chat_id]
     row = session['row']
-    worksheet = sh.worksheet('D1')
+    worksheet = sh.worksheet(GSHEET_TAB)
     columns = get_column_mapping(worksheet)
 
     # step_to_column is a global var
@@ -663,7 +704,7 @@ def log_checkpoint_to_sheet(chat_id, step_key, actual_pax=None, expected_pax=Non
 
 # if user filling halfway we recover the session.
 def recover_session_from_sheet(chat_id, bus_number):
-    worksheet = sh.worksheet('D1')
+    worksheet = sh.worksheet(GSHEET_TAB)
 
     columns = get_column_mapping(worksheet)
     bus_col_index = columns.get("bus #")  # Get index from header
@@ -718,8 +759,122 @@ def recover_session_from_sheet(chat_id, bus_number):
 
     return None
 
+@bot.message_handler(commands=['edit_plate'])
+def handle_edit_plate(message):
+    chat_id = message.chat.id
 
+    if chat_id not in user_sessions:
+        bot.send_message(chat_id, "⚠️ No active session found. Please /start first.")
+        return
 
+    bot.send_message(chat_id, "✏️ Please enter the *new bus plate number*:", parse_mode="Markdown")
+    bot.register_next_step_handler(message, lambda msg: intercept_end_command(msg, update_plate_number))
+
+def update_plate_number(message):
+    chat_id = message.chat.id
+    plate = message.text.strip().upper()
+
+    if not re.fullmatch(r"(?=.*[A-Z])[A-Z0-9\- ]{3,15}", plate):
+        bot.send_message(chat_id, "❌ Invalid format. Please enter a valid bus plate number (e.g. 'ABC1234').")
+        return bot.register_next_step_handler(message, update_plate_number)
+
+    # Update in-memory session
+    user_sessions[chat_id]['bus_plate'] = plate
+
+    # Update Google Sheet in thread
+    threading.Thread(
+        target=_update_plate_number_sync,
+        args=(chat_id, plate)
+    ).start()
+
+    bot.send_message(chat_id, f"🔄 Updating Google Sheet with new plate *{plate}*...", parse_mode="Markdown")
+
+def _update_plate_number_sync(chat_id, plate):
+    if 'row' not in user_sessions[chat_id]:
+        print(f"[INFO] No row assigned yet for chat_id {chat_id}")
+        return
+
+    try:
+        row = user_sessions[chat_id]['row']
+        worksheet = sh.worksheet(GSHEET_TAB)
+        columns = get_column_mapping(worksheet)
+
+        col_index = columns.get("bus plate")
+        if col_index:
+            worksheet.update_cell(row, col_index, plate)
+
+            worksheet.format(gspread.utils.rowcol_to_a1(row, col_index), {
+            "backgroundColor": {"red": 0.8, "green": 1.0, "blue": 0.8}  # Light yellow
+            })
+            
+            bot.send_message(chat_id, f"✅ Bus plate updated to *{plate}* in Google Sheet.", parse_mode="Markdown")
+            send_step_prompt(chat_id)
+        else:
+            bot.send_message(chat_id, "⚠️ 'Bus Plate' column not found in sheet.")
+    except Exception as e:
+        bot.send_message(chat_id, f"❌ Failed to update Google Sheet: {e}")
+        print(f"[ERROR] Updating plate failed for {chat_id}: {e}")
+
+@bot.message_handler(commands=['edit_pax'])
+def handle_edit_pax(message):
+    chat_id = message.chat.id
+
+    if chat_id not in user_sessions:
+        bot.send_message(chat_id, "⚠️ No active session found. Please /start first.")
+        return
+
+    bot.send_message(chat_id, "✏️ Please enter the *new passenger count*:", parse_mode="Markdown")
+    bot.register_next_step_handler(message, lambda msg: intercept_end_command(msg, update_pax))
+
+def update_pax(message):
+    chat_id = message.chat.id
+    try:
+        pax = int(message.text.strip())
+
+        if pax < 1 or pax > 100:  # Adjust based on your limit
+            bot.send_message(chat_id, "❌ Invalid input. Please enter a valid number of passengers (1-100).")
+            return bot.register_next_step_handler(message, update_pax)
+
+        # Update in-memory session
+        user_sessions[chat_id]['passenger_count'] = pax = pax
+
+        # Update Google Sheet in a separate thread
+        threading.Thread(
+            target=_update_pax_sync,
+            args=(chat_id, pax)
+        ).start()
+
+        bot.send_message(chat_id, f"🔄 Updating Google Sheet with new passenger count *{pax}*...", parse_mode="Markdown")
+    
+    except ValueError:
+        bot.send_message(chat_id, "❌ Invalid input. Please enter a valid number for passengers.")
+        return bot.register_next_step_handler(message, update_pax)
+
+def _update_pax_sync(chat_id, pax):
+    if 'row' not in user_sessions[chat_id]:
+        print(f"[INFO] No row assigned yet for chat_id {chat_id}")
+        return
+
+    try:
+        row = user_sessions[chat_id]['row']
+        worksheet = sh.worksheet(GSHEET_TAB)
+        columns = get_column_mapping(worksheet)
+
+        col_index = columns.get("no. of pax")
+        if col_index:
+            worksheet.update_cell(row, col_index, pax)
+
+            worksheet.format(gspread.utils.rowcol_to_a1(row, col_index), {
+            "backgroundColor": {"red": 0.8, "green": 1.0, "blue": 0.8}  # Light yellow
+            })
+
+            bot.send_message(chat_id, f"✅ Passenger count updated to *{pax}* in Google Sheet.", parse_mode="Markdown")
+            send_step_prompt(chat_id)
+        else:
+            bot.send_message(chat_id, "⚠️ 'Passenger Count' column not found in sheet.")
+    except Exception as e:
+        bot.send_message(chat_id, f"❌ Failed to update Google Sheet: {e}")
+        print(f"[ERROR] Updating pax failed for {chat_id}: {e}")
 
 # # test code
 # import random

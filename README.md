@@ -135,3 +135,13 @@ Or I usually use the console itself, its much easier.
 - ✅ Re-edit your bus details
 
 ---
+
+## ✅ To Do
+
+- Async Update for google sheets for passenger count
+- /edit feature to reedit bot if change bus plate
+- /edit make sure the edit feature works when button is called after
+- Gather more testers
+- Reporting remarks
+
+---
