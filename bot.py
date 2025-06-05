@@ -108,11 +108,28 @@ step_to_column = {
     "reached_runway": "Time bus reach sunway"
 }
 
+# def intercept_end_command(message, next_handler):
+#     if message.text.strip().lower() == '/end':
+#         return end_bot(message)
+#     else:
+#         return next_handler(message)
+    
 def intercept_end_command(message, next_handler):
-    if message.text.strip().lower() == '/end':
+    text = message.text.strip().lower()
+    chat_id = message.chat.id
+
+    if text == '/end':
         return end_bot(message)
-    else:
-        return next_handler(message)
+
+    if text in ['/edit_pax', '/edit_plate']:
+        if not user_sessions.get(chat_id, {}).get('details_confirmed', False):
+            bot.send_message(chat_id, "⚠️ Please complete and *confirm* your bus details by filling the form first before using commands like /edit_plate or /edit_pax. Use /end and /start again to restart", parse_mode="Markdown")
+            return
+        else:
+            # Allow commands through normally after confirmation
+            return bot.process_new_messages([message])
+
+    return next_handler(message)
 
 # Entry point
 @bot.message_handler(commands=['start'])
@@ -121,7 +138,8 @@ def handle_start(message):
     bot.register_next_step_handler(message, lambda msg: intercept_end_command(msg,ask_and_validate_bus_number))
 
 def is_valid_bus_number(text):
-    return re.fullmatch(r"[A-Za-z]{1,2}[0-9]{1,2}", text.strip()) is not None
+    # return re.fullmatch(r"[A-Za-z]{1,2}[0-9]{1,2}", text.strip()) is not None
+    return re.fullmatch(r"[A-Za-z]{1,2}[0-9]{1,4}", text.strip()) is not None
 
 def handle_bus_recovery_check(message):
     chat_id = message.chat.id
@@ -414,14 +432,15 @@ def handle_step_callback(call):
 
             
     elif call.data == "confirm_details":
+        user_sessions[chat_id]['details_confirmed'] = True
         chat_id = call.message.chat.id
 
         # 🔧 Log to the sheet now
-        # log_initial_details_to_sheet(chat_id)
-        threading.Thread(
-            target=log_initial_details_to_sheet,
-            args=(chat_id,)
-        ).start()
+        log_initial_details_to_sheet(chat_id)
+        # threading.Thread(
+        #     target=log_initial_details_to_sheet,
+        #     args=(chat_id,)
+        # ).start()
 
         markup = InlineKeyboardMarkup()
         markup.add(InlineKeyboardButton("🟢 Okay", callback_data="begin_checklist"))
@@ -764,7 +783,11 @@ def handle_edit_plate(message):
     chat_id = message.chat.id
 
     if chat_id not in user_sessions:
-        bot.send_message(chat_id, "⚠️ No active session found. Please /start first.")
+        bot.send_message(chat_id, "⚠️ No active session found. Please register all details first. Use /end and /start again to restart the bot.")
+        return
+    
+    if not user_sessions[chat_id].get('details_confirmed'):
+        bot.send_message(chat_id, "❌ You must confirm your bus details before editing. Please complete the setup first.")
         return
 
     bot.send_message(chat_id, "✏️ Please enter the *new bus plate number*:", parse_mode="Markdown")
@@ -820,9 +843,13 @@ def handle_edit_pax(message):
     chat_id = message.chat.id
 
     if chat_id not in user_sessions:
-        bot.send_message(chat_id, "⚠️ No active session found. Please /start first.")
+        bot.send_message(chat_id, "⚠️ No active session found. Please register all details first. Use /end and /start again to restart the bot.")
         return
 
+    if not user_sessions[chat_id].get('details_confirmed'):
+        bot.send_message(chat_id, "❌ You must confirm your bus details before editing. Please complete the setup first.")
+        return
+    
     bot.send_message(chat_id, "✏️ Please enter the *new passenger count*:", parse_mode="Markdown")
     bot.register_next_step_handler(message, lambda msg: intercept_end_command(msg, update_pax))
 
@@ -918,4 +945,3 @@ def _update_pax_sync(chat_id, pax):
 # # bot.infinity_polling()  
 # if __name__ == "__main__":
 #     app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 5000)))
-
