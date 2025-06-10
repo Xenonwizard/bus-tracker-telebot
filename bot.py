@@ -91,7 +91,7 @@ prompts = {
     "left_my_custom": "Have you left MY Customs?",
     "reached_rest_stop": "Have you reached the rest stop?",
     "left_rest_stop": "Have you left the rest stop?",
-    "at_30_min_mark": "Are you at the 30 minutes mark?",
+    "at_30_min_mark": "Are you at the Last Toll (30 minutes mark)?",
     "reached_runway": "Have you reached Sunway? 🎉🚌"
 }
 
@@ -346,8 +346,15 @@ def send_step_prompt(chat_id):
     step_index = user_sessions[chat_id]["step_index"]
     if step_index >= len(steps):
         bot.send_message(chat_id,
-            "🎉 Congratulations! You've successfully reached Sunway safely. "
-            "Thank you for your effort 🙌\nPlease send /end to terminate this bot."
+           "🎉 Congratulations! You've successfully reached Sunway safely. "
+                "Thank you for your effort 🙌\n\n"
+                "A few final reminders to wrap up smoothly:\n"
+                "• Please ensure the team doesn't wear lanyards while walking across the mall 🏢\n\n"
+                "• Boys head down first to unload, followed by the girls 🚶‍♂️🚶‍♀️\n\n"
+                "• Double-check that everyone has all their belongings 🎒📱\n\n"
+                "• Don't forget to collect the bus IC packs, signages, tracker, and masks — and please pass them to the welcome team 🎭📦\n\n"
+                "• Lastly, make sure all trash is properly disposed of on your own (do not pass to the welcome team) 🗑️\n\n"
+                "Please send /end to terminate this bot. Great job, team!"
         )
         return
     step_key = steps[step_index]
@@ -773,7 +780,8 @@ def recover_session_from_sheet(chat_id, bus_number):
                 "bus_plate": bus_plate,
                 "passenger_count": pax,
                 "bus_ic": bus_ic,
-                "bus_2ic": bus_2ic
+                "bus_2ic": bus_2ic,
+                "details_confirmed": True
             }
 
     return None
