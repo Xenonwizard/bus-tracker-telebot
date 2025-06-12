@@ -31,7 +31,7 @@ load_dotenv()
 
 
 
-# UNCOMMENT to run on cloud run, this loads the raw JSON string from the environment
+# # UNCOMMENT to run on cloud run, this loads the raw JSON string from the environment
 json_str = os.getenv("JSON_PATHNAME")  # or 'JSON_PATHNAME' if that’s what you're using
 
 if not json_str:
@@ -360,8 +360,8 @@ def send_step_prompt(chat_id):
     step_key = steps[step_index]
     markup = InlineKeyboardMarkup()
     markup.add(
-        InlineKeyboardButton(text="✅ Yes", callback_data=f"yes_{step_key}"),
-        InlineKeyboardButton(text="⬅️ Back", callback_data="go_back")
+        InlineKeyboardButton(text="⬅️ Back", callback_data="go_back"),
+        InlineKeyboardButton(text="✅ Yes", callback_data=f"yes_{step_key}")
     )
     bot.send_message(chat_id, f"{prompts[step_key]} (Click only when confirmed)", reply_markup=markup)
 
@@ -536,12 +536,14 @@ def handle_passenger_count_after_step(message):
 
     # ✅ NEW: Log time + checkbox to Google Sheet
     # log_checkpoint_to_sheet(chat_id, step_key)
-    threading.Thread(
-        target=log_checkpoint_to_sheet,
-        args=(chat_id, step_key)
-    ).start()
+    bot.send_message(chat_id, "⏳ Uploading checkpoint to sheet...")
 
-    bot.send_message(chat_id, "✅ Passenger count recorded.")
+    try:
+        log_checkpoint_to_sheet(chat_id, step_key)
+        bot.send_message(chat_id, "✅ Checkpoint successfully saved.")
+    except Exception as e:
+        bot.send_message(chat_id, f"❌ Failed to save checkpoint: {e}")
+
     user_sessions[chat_id]['step_index'] += 1
     send_step_prompt(chat_id)
 
@@ -580,17 +582,30 @@ def handle_mismatch_reason(message):
     #     expected_pax=mismatch['expected_count'],
     #     remark=reason
     # )
-    threading.Thread(
-        target=log_checkpoint_to_sheet,
-        args=(chat_id, mismatch['step_key']),
-        kwargs={
-            "actual_pax": mismatch['actual_count'],
-            "expected_pax": mismatch['expected_count'],
-            "remark": reason
-        }
-    ).start()
+    # threading.Thread(
+    #     target=log_checkpoint_to_sheet,
+    #     args=(chat_id, mismatch['step_key']),
+    #     kwargs={
+    #         "actual_pax": mismatch['actual_count'],
+    #         "expected_pax": mismatch['expected_count'],
+    #         "remark": reason
+    #     }
+    # ).start()
 
-    bot.send_message(chat_id, "✅ Passenger count and remark recorded.")
+    # bot.send_message(chat_id, "✅ Passenger count and remark recorded.")
+    bot.send_message(chat_id, "⏳ Uploading checkpoint and remarks to sheet...")
+
+    try:
+        log_checkpoint_to_sheet(
+            chat_id,
+            mismatch['step_key'],
+            actual_pax=mismatch['actual_count'],
+            expected_pax=mismatch['expected_count'],
+            remark=reason
+        )
+        bot.send_message(chat_id, "✅ Checkpoint and remarks successfully saved.")
+    except Exception as e:
+        bot.send_message(chat_id, f"❌ Failed to save checkpoint with remark: {e}")
     user_sessions[chat_id]['step_index'] += 1
     send_step_prompt(chat_id)
 
